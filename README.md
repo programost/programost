@@ -18,8 +18,10 @@ nasm -f bin kernel.asm -o kernel.asm
 create bootable image:
 cat boot.bin kernel.bin > os.img
 or
-dd if=/dev/zero of=os.img bs=512 count=2880
+dd if=/dev/zero of=os.img 
+s=512 count=2880
 dd if=boot.bin of=os.img conv=notrunc
 dd if=kernel.bin of=os.img bs=512 seek=1 conv=notrunc
 starting system on qemu:
 qemu-system-x86_64 -hda os.img
+![gitcommit](https://github.com/user-attachments/assets/b325575b-d1c8-410a-b2a6-241b883701bc)
