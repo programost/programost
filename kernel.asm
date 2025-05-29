@@ -4,6 +4,8 @@ org 0x8000
 %define CMD_LENGTH 64
 %define VIDEO_MEMORY 0xB8000
 %define MAX_PASS_LEN      16
+
+
 jmp kernel_start
 
 ; Данные
@@ -14,7 +16,7 @@ help_msg db "Commands:", 0x0D, 0x0A, "sysinfo, reboot, shutdown, echo <text>, go
 sysinfo_msg db "YodaOs beta-console v1.0 | ???MB RAM | VGA Text Mode",0
 reboot_msg db "Rebooting...",0
 shutdown_msg db "Shutting down...",0
-color_msg db "color changed [current_color]",0
+color_msg db "color been change",0
 invalid_color_msg db "enter number color 1-15!", 0
 unknown_msg db "Unknown command! Type 'help'",0
 parrot_msg db "Secret parrot |0_0| (-_-)", 0
@@ -23,6 +25,7 @@ dir_msg db "Error code 1 - Not found filesystem on disk", 0 ;заглушка
 mkdir_msg db "Error code 1 - Not found filesystem on disk", 0 ;заглушка
 cd_msg db "Error code 1 - Not found filesystem on disk", 0 ;заглушка
 process_sys_msg db "1, Kernel.asm", 0
+logcat_msg db "Start", 0x0D, 0x0A, "log:starting kernel.bin...", 0x0D,0x0A,"log: kernel.bin has starting", 0x0D,0x0A, "log: starting simpleboot", 0x0D,0x0A,"log: succes, system start", 0x0D, 0x0A, "log: logcat exit", 0
 simpleboot_msg db "Simpleboot version: 1.0", 0x0D, 0x0A, "write for YodaOS",0x0D,0x0A, "select boot logo:", 0x0D,0x0A," simpleboot-1 for circle",0x0D, 0x0A,"simpleboot-2 for square",0
 neofetch_msg db "    000   ", 0x0D, 0x0A, "  0000000", 0x0D, 0x0A, " 000000000", 0x0D, 0x0A, " 000000000", 0x0D, 0x0A, "  0000000", 0x0D, 0x0A, "    000", 0x0D, 0x0A, "YodaOS system", 0x0D, 0x0A, " using ram: ???MB", 0x0D, 0x0A, "video mode: 80x25 symbol", 0x0D, 0x0A, "video memory: ????Mb", 0x0D, 0x0A, "command use neofetch", 0x0D, 0x0A, "System-type: console", 0x0D, 0x0A, "filesystem: not foudn (version with out filesystem)", 0
 bool_msg db "                                       000 ", 0x0D, 0x0A, "                                      00000", 0x0D, 0x0A, "                                      00000", 0x0D, 0x0A, "                                       000 ", 0x0D, 0x0A,"secure ball",0
@@ -63,6 +66,7 @@ bootlogo:
     db "                                     YodaOS", 0
 baby_yoda_len equ $ - baby_yoda
 section_circle db "1",0
+setcolor dw 0
 section_square db "2",0
 section_romb db "romb",0
 section_circle_msg db "good, reboot system now", 0
@@ -96,10 +100,24 @@ commands:
     db "simpleboot-1", 0
     db "simpleboot-2", 0
     db "sleepmode", 0
-    db "shell"
+    db "shell", 0
+    db "cleatefile", 0
     db 0
 
-    
+command_shell:
+    db "set-color-1",0
+    db "logcat",0
+    db "dumpsys-bootlogo-vision",0
+    db "dumpsys-set-password",0
+    db "exit-shell", 0
+    db 0
+
+command_shell_table:
+    dw set_color_handler
+    dw logcat_handler
+    ;dw dumpsys_boot_handler
+    ;dw dumpsys_pass_handler
+    dw exit_shell_handler
 
 command_table:
     dw sysinfo_handler ;1
@@ -159,6 +177,44 @@ main_loop:
     call read_input
     call parse_command
     jmp main_loop
+shell:
+    mov si, shell_prompt
+    call print_string
+    call read_input
+    call parse_shell_command
+    jmp shell
+
+parse_shell_command:
+    mov si, input_buffer
+    cmp byte [si], 0
+    je .done_shell
+
+    mov di, command_shell
+    xor bx, bx
+.check_cmd_shell:
+    mov si, input_buffer
+    call strcmp
+    je .found_shell
+
+.next_cmd_shell:
+    inc di
+    cmp byte [di-1], 0
+    jne .next_cmd_shell
+    inc bx
+    cmp byte [di], 0
+    jne .check_cmd_shell
+
+    mov si, unknown_msg
+    call print_string
+    call new_line
+    ret
+
+.found_shell:
+    shl bx, 1
+    jmp [command_shell_table + bx]
+.done_shell:
+   ret
+; ---------------------------- файловая система --------------------------------
 
 ;-----------------------------
 init:
@@ -374,6 +430,7 @@ parse_command:
     mov di, commands
     xor bx, bx
 
+
 .check_cmd:
     mov si, input_buffer
     call strcmp
@@ -398,11 +455,47 @@ parse_command:
 
 .done:
     ret
+.done_shell:
+    ret
+;----------------------------
+;shell команды
+;----------------------------
+set_color_handler:
+    xor     ax, ax     ; DS=0
+    mov     ds, ax
+    cld                ; DF=0 because our LODSB requires it
+    mov al, [setcolor]
+    mov si, color_msg
+    call    printstr
+    mov bl, 2
+    call new_line
+    ret
+logcat_handler:
+    mov si, logcat_msg
+    cmp al, [setcolor]
+    je logcat_with_color
+    call print_string
+    call new_line
+    ret
+logcat_with_color:
+    xor     ax, ax     ; DS=0
+    mov     ds, ax
+    cld                ; DF=0 because our LODSB requires it
+    mov si, logcat_msg
+    call    printstr
+    mov bl, 2
+    call new_line
+    ret
+exit_shell_handler:
+    call main_loop
+    ret
 
 ;-----------------------------
 ; Обработчики команд
+;-----------------------------
 shell_handler:
-    mov si, shell_msg
+    call shell
+    mov si, shell_prompt
     call print_string
     call new_line
     ret
@@ -459,8 +552,6 @@ dir_handler:
     xor     ax, ax     ; DS=0
     mov     ds, ax
     cld                ; DF=0 because our LODSB requires it
-    mov     ax, 0003h  ; Select 80x25 16-color text video mode
-    int     10h
     mov si, dir_msg
     call    printstr
     mov bl, 2
@@ -471,8 +562,6 @@ mkdir_handler:
     xor     ax, ax     ; DS=0
     mov     ds, ax
     cld                ; DF=0 because our LODSB requires it
-    mov     ax, 0003h  ; Select 80x25 16-color text video mode
-    int     10h
     mov si, mkdir_msg
     call    printstr
     mov bl, 2
@@ -483,8 +572,6 @@ cd_handler:
     xor     ax, ax     ; DS=0
     mov     ds, ax
     cld                ; DF=0 because our LODSB requires it
-    mov     ax, 0003h  ; Select 80x25 16-color text video mode
-    int     10h
     mov si, cd_msg
     call    printstr
     mov bl, 2
@@ -499,7 +586,7 @@ print:
     je      done
     cmp     al, 32
     jb      skip
-    mov     ah, 09h   ; BIOS.WriteCharacterWithAttribute
+    mov     ah, 09h  ; BIOS.WriteCharacterWithAttribute
     int     10h
 skip:
     mov     ah, 0Eh   ; BIOS.Teletype
@@ -582,7 +669,7 @@ echo_handler:
     ret
 
 goto_echo_handler:
-    mov si, input_buffer + 8
+    mov si, input_buffer + 10
 .loop:
     mov ah, 0x01
     int 0x16
@@ -610,6 +697,7 @@ new_line:
     mov al, 0x0A
     int 0x10
     ret
+
 
 strcmp:
     pusha
