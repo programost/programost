@@ -7,6 +7,8 @@ org 0x8000
 jmp kernel_start
 
 ; Данные
+shell_prompt db "YodaOS-shell> ", 0
+shell_msg db "shell comming soon..."
 prompt db "YodaOS-tool> ",0
 help_msg db "Commands:", 0x0D, 0x0A, "sysinfo, reboot, shutdown, echo <text>, goto-echo <word>, help, rootfs, dir, mkdir, cd, process-sys, clear", 0x0D, 0x0A,"secure command:", 0x0D, 0x0A,"secret-parrot, secret-ball",0
 sysinfo_msg db "YodaOs beta-console v1.0 | ???MB RAM | VGA Text Mode",0
@@ -25,7 +27,41 @@ simpleboot_msg db "Simpleboot version: 1.0", 0x0D, 0x0A, "write for YodaOS",0x0D
 neofetch_msg db "    000   ", 0x0D, 0x0A, "  0000000", 0x0D, 0x0A, " 000000000", 0x0D, 0x0A, " 000000000", 0x0D, 0x0A, "  0000000", 0x0D, 0x0A, "    000", 0x0D, 0x0A, "YodaOS system", 0x0D, 0x0A, " using ram: ???MB", 0x0D, 0x0A, "video mode: 80x25 symbol", 0x0D, 0x0A, "video memory: ????Mb", 0x0D, 0x0A, "command use neofetch", 0x0D, 0x0A, "System-type: console", 0x0D, 0x0A, "filesystem: not foudn (version with out filesystem)", 0
 bool_msg db "                                       000 ", 0x0D, 0x0A, "                                      00000", 0x0D, 0x0A, "                                      00000", 0x0D, 0x0A, "                                       000 ", 0x0D, 0x0A,"secure ball",0
 bootload_msg db " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "                                       000 ", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                       000 ", 0x0D, 0x0A,"                                  YodaOS v1.0", 0x0D, 0x0A,"                                 simple bootloader ", 0x0D, 0x0A, "                                       100%",0 
-bootload_square_msg db " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "                                      00000 ", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                      00000 ", 0x0D, 0x0A,"                                  YodaOS v1.0", 0x0D, 0x0A,"                                 simple bootloader ", 0x0D, 0x0A, "                                       100%",0  
+bootload_square_msg db " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, " ", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "", 0x0D, 0x0A, "                                      00000 ", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                      01110", 0x0D, 0x0A, "                                      00000 ", 0x0D, 0x0A,"                                  YodaOS v1.0", 0x0D, 0x0A,"                                 simple bootloader ", 0x0D, 0x0A, "                                       100%",0 
+baby_yoda:
+    db "  @@@@@@@  ", 0x0D, 0x0A   
+    db " @@&&&&&@@ ", 0x0D, 0x0A 
+    db "@##%   %##@", 0x0D, 0x0A 
+    db "@##*   *##@", 0x0D, 0x0A   
+    db "@##%   %##@", 0x0D, 0x0A
+    db " @@&&&&&@@ ", 0x0D, 0x0A  
+    db "  @@@@@@@  ", 0x0D, 0x0A 
+    db "RAM: ???MB",0x0D, 0x0A
+    db "VIDEO MEMORY: ???MB",0x0D, 0x0A
+    db "system: YodaOS console edition v1.0 ",0x0D, 0x0A
+    db "kernel: YodaOS v1.0.0.0-x86_64-debug",0x0D, 0x0A
+    db "z-ram: none",0x0D, 0x0A
+    db "processor: Unknown",0x0D, 0x0A
+    db "disk: None",0x0D, 0x0A
+    db "shell: YodaOS bsm-1.0",0x0D, 0x0A, 0
+bootlogo:
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "", 0x0D, 0x0A
+    db "                                     @@@@@@@  ", 0x0D, 0x0A   
+    db "                                    @@&&&&&@@ ", 0x0D, 0x0A 
+    db "                                   @##%   %##@", 0x0D, 0x0A 
+    db "                                   @##*   *##@", 0x0D, 0x0A   
+    db "                                   @##%   %##@", 0x0D, 0x0A
+    db "                                    @@&&&&&@@ ", 0x0D, 0x0A  
+    db "                                     @@@@@@@  ", 0x0D, 0x0A 
+    db "                                 simpleboot v1.0", 0x0D,0x0A
+    db "                                     YodaOS", 0
+baby_yoda_len equ $ - baby_yoda
 section_circle db "1",0
 section_square db "2",0
 section_romb db "romb",0
@@ -59,7 +95,8 @@ commands:
     db "simpleboot-version", 0
     db "simpleboot-1", 0
     db "simpleboot-2", 0
-    db "sleepmode"
+    db "sleepmode", 0
+    db "shell"
     db 0
 
     
@@ -81,9 +118,10 @@ command_table:
     dw processsys_handler ;14
     dw neofetch_handler ;15
     dw simpleboot_handler ;16
-    dw simpleboot_circle_handler ;17
-    dw simpleboot_square_handler ;18
-    dw sleepmode_handler
+    dw simpleboot_circle_handler ;17 заглушка
+    dw simpleboot_square_handler ;18 заглушка
+    dw sleepmode_handler ;19 заглушка
+    dw shell_handler ;20 заглушка
 
 
 kernel_start:
@@ -101,7 +139,7 @@ kernel_start:
     mov eax, [saved_value]   
     cmp eax, 1  
     jc section_circle_equal
-    mov si,bootload_msg
+    mov si,bootlogo
     call print_string
 
     
@@ -363,6 +401,11 @@ parse_command:
 
 ;-----------------------------
 ; Обработчики команд
+shell_handler:
+    mov si, shell_msg
+    call print_string
+    call new_line
+    ret
 sleepmode_handler:
     cli                 
     jmp 0:init 
@@ -395,10 +438,11 @@ simpleboot_handler:
     ret
 
 neofetch_handler: 
-    mov si, neofetch_msg
+    mov si, baby_yoda
     call print_string
     call new_line
     ret
+
 
 processsys_handler:
     mov si, process_sys_msg
@@ -412,21 +456,56 @@ clear_handler:
     ret
 
 dir_handler:
+    xor     ax, ax     ; DS=0
+    mov     ds, ax
+    cld                ; DF=0 because our LODSB requires it
+    mov     ax, 0003h  ; Select 80x25 16-color text video mode
+    int     10h
     mov si, dir_msg
-    call print_string
+    call    printstr
+    mov bl, 2
     call new_line
     ret
 
 mkdir_handler:
+    xor     ax, ax     ; DS=0
+    mov     ds, ax
+    cld                ; DF=0 because our LODSB requires it
+    mov     ax, 0003h  ; Select 80x25 16-color text video mode
+    int     10h
     mov si, mkdir_msg
-    call print_string
+    call    printstr
+    mov bl, 2
     call new_line
     ret
 
 cd_handler:
+    xor     ax, ax     ; DS=0
+    mov     ds, ax
+    cld                ; DF=0 because our LODSB requires it
+    mov     ax, 0003h  ; Select 80x25 16-color text video mode
+    int     10h
     mov si, cd_msg
-    call print_string
+    call    printstr
+    mov bl, 2
     call new_line
+    ret
+printstr:
+    mov     cx, 1     ; RepetitionCount
+    mov     bh, 0     ; DisplayPage
+print:
+    lodsb
+    cmp     al, 0
+    je      done
+    cmp     al, 32
+    jb      skip
+    mov     ah, 09h   ; BIOS.WriteCharacterWithAttribute
+    int     10h
+skip:
+    mov     ah, 0Eh   ; BIOS.Teletype
+    int     10h
+    jmp     print
+done:
     ret
 
 secret_ball_handler:
