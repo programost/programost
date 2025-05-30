@@ -24,4 +24,5 @@ dd if=boot.bin of=os.img conv=notrunc
 dd if=kernel.bin of=os.img bs=512 seek=1 conv=notrunc
 starting system on qemu:
 qemu-system-x86_64 -hda os.img
-![gitcommit](https://github.com/user-attachments/assets/b325575b-d1c8-410a-b2a6-241b883701bc)
+![best_memory](https://github.com/user-attachments/assets/d927b809-c60f-4cdd-8c04-915999c03fa5)
+
