@@ -3,22 +3,26 @@
 
 jmp kernel_main
 
-; Структура файла
-file_size equ 16 + 256
-struc file
-    .name: resb 16
-    .content: resb 256
-endstruc
+; Константы
+%define MAX_FILES 10
+%define FILE_NAME_SIZE 16
+%define FILE_CONTENT_SIZE 1024
+%define FILE_SIZE FILE_NAME_SIZE + FILE_CONTENT_SIZE
+%define MAX_FUNCS 20
+%define FUNC_NAME_SIZE 16
+%define MAX_STACK_DEPTH 20
+%define COMMAND_BUF_SIZE 64
+%define TICKS_PER_SECOND 18     ; 18.2 тика в секунду
 
 ; Данные ядра
-welcome_msg db "YodaOS v1.2", 13, 10, 0
-prompt db "YodaOS-tool> ",0 
+welcome_msg db "YodaOS 16-bit v1.3", 13, 10, 0
+prompt db "YodaOS> ", 0
 newline db 13, 10, 0
 unknown_cmd db "Unknown command", 13, 10, 0
-help_msg db "Commands: help, shutdown, reboot, neofetch, yred, file, list, run", 13, 10, 0
+help_msg db "Commands: help, shutdown, reboot, neofetch, yred, file, ls, run, logcat, sb-version, cd, dir, mkdir, process-sys", 13, 10, 0
 file_not_found db "File not found", 13, 10, 0
 file_prompt db "Enter filename: ", 0
-editing_msg db "Editing (ESC=save, BACKSPACE=delete):", 13, 10, 0
+editing_msg db "Text Editor (ESC=save, BACKSPACE=delete):", 13, 10, 0
 file_saved_msg db "File saved!", 13, 10, 0
 list_header db "Files in system:", 13, 10, 0
 list_empty db "No files found", 13, 10, 0
@@ -29,9 +33,15 @@ script_end_msg db "Script finished", 13, 10, 0
 press_any_key db "Press any key...", 13, 10, 0
 unknown_script_cmd db "Unknown command: ", 0
 input_prompt db "Input: ", 0
-var_not_found db "Variable not found: ", 0
-if_true_msg db "Condition true", 13, 10, 0
-if_false_msg db "Condition false", 13, 10, 0
+func_declared db "Function declared: ",0
+func_not_found db "Function not found: ",0
+importing_msg db "Importing: ",0
+runcode_msg db "Executing: ",0
+stack_overflow db "Stack overflow!",13,10,0
+max_depth_msg db "Maximum depth reached",13,10,0
+return_msg db "Returning from function",13,10,0
+endfunc_msg db "ENDFUNC found, exiting function definition",13,10,0
+fs_full_msg db "File system full",13,10,0
 error_disk db "Error code 1: read file system imposible", 13, 10, 0
 process_msg db "1. System | 0% cpu | 20 KB ram |", 13, 10, 0
 neofetch_msg:
@@ -62,38 +72,54 @@ logcat_msg:
     db "kernel - good, system has starting", 13, 10
     db "kernel - log exit", 13, 10, 0
 info_myl_msg:
-    db "This MYL script language in YodaOS", 13, 10
-    db "create by Yoda", 13, 10, 0
+    db "This MYL script language in YodaOS", 0x0D, 0x0A
+    db "create by Yoda", 0x0D, 0x0A, 0
 learn_myl_msg:
-    db "learn MYL language, lets start)", 13, 10, 0
-    db "PRINT <var or text> - print text or var on screen"
-    db "SET <var> 0 - set value <var> 0"
-    db "INPUT <var> - enter value in var"
-    db "CLEAR - clear you screen"
-    db "WAIT - wait you type on keyboard"
-    db "IF <var> <operator> <other var or number> <action> <func> - check var > var2, var < var2, var = var2.  "
-    db "IF operators:"
-    db "EQ - var1 = var2"
-    db "GT - var1 > var2"
-    db "SYSCALL - call system command example SYSCALL neofetch"
-    db "GOTO <cycle name> - infinity cycle, example code:"
-    db "GOTO label"
-    db "PRINT test code"
-    db ":label"
-    db "EXIT"
-    db "EXIT - end script file"
+    db "learn yscr language, lets start)", 0x0D, 0x0A
+    db "PRINT <var or text> - print text or var on screen", 0x0D, 0x0A
+    db "SET <var> 0 - set value <var> 0   "  
+    db "INPUT <var> - enter value in var", 0x0D, 0x0A
+    db "CLEAR - clear you screen   "
+    db "WAIT - wait you type on keyboard", 0x0D, 0x0A
+    db "FUNC <name> - create a function", 0x0D, 0x0A
+    db "ENDFUNC - end FUNC", 0x0D, 0x0A
+    db "RUNCODE <filename> - run file", 0x0D, 0x0A
+    db "IMPORT <filename> - import FUNC in filename", 0x0D, 0x0A
+    db "TIME <sec> - set timer on <sec>", 0x0D, 0x0A
+    db "PRINTTIME <Text> - super slow print text on screen", 0x0D, 0x0A
+    db "TYPE <text> - slow print text on screen", 0x0D, 0x0A
+    db "RANDOM - print random number 10-99", 0x0D, 0x0A
+    db "IF <var> <operator> <other var or number> <action> <func> - check var > var2, var < var2, var = var2.  ", 0x0D, 0x0A
+    db "IF operators:", 0x0D, 0x0A
+    db "EQ - var1 = var2  "
+    db "GT - var1 > var2  "
+    db "LT - var2 > var1",0x0D, 0x0A
+    db "SYSCALL - call system command example SYSCALL neofetch", 0x0D, 0x0A
+    db "GOTO <cycle name> - infinity cycle, example code:", 0x0D, 0x0A
+    db "GOTO label", 0x0D, 0x0A
+    db "PRINT test code", 0x0D, 0x0A
+    db ":label", 0x0D, 0x0A
+    db "EXIT", 0x0D, 0x0A
+    db "EXIT - end script file", 0x0D, 0x0A, 0
 sb_msg db "sb version: 1.0", 13, 10 , 0
+time_msg db "TIME: Waiting ",0
+seconds_msg db " seconds",13,10,0
+random_msg db "Random number: ",0
+type_msg db "TYPE: ",0
+
 
 ; Буферы
-current_file: times 16 db 0
-command_buffer: times 64 db 0
-file_buffer: times 256 db 0
+current_file: times FILE_NAME_SIZE db 0
+command_buffer: times COMMAND_BUF_SIZE db 0
+file_buffer: times FILE_CONTENT_SIZE db 0
 line_buffer: times 80 db 0
 input_buffer: times 64 db 0
 var_name_buffer: times 16 db 0
-var_value_buffer: times 16 db 0
+func_name_buf: times FUNC_NAME_SIZE db 0
+import_buf: times FILE_NAME_SIZE db 0
+temp_str: times 16 db 0
 
-; Переменные (максимум 26 - A-Z)
+; Переменные (A-Z)
 variables:
 var_A dw 0
 var_B dw 0
@@ -122,21 +148,20 @@ var_X dw 0
 var_Y dw 0
 var_Z dw 0
 
-; Файловая система (5 файлов)
-files:
-    istruc file
-        at file.name, db "help.myl",0
-        at file.content, db "PRINT Help programm of MYL lang type 1, 2, 3", 13, 10
-                        db "INPUT A", 13, 10
-                        db "IF A EQ 1 SYSCALL info_myl", 13, 10
-                        db "IF A EQ 2 SYSCALL learn_myl", 13, 10
-                        db "IF A EQ 3 PRINT ok", 13, 10
-                        db "", 13, 10
-                        db "EXIT", 13, 10, 0
-    iend
-    times 4 * file_size db 0
+; Файловая система
+files: times MAX_FILES * FILE_SIZE db 0
 
-; Команды
+; Таблица функций
+func_names: times MAX_FUNCS * FUNC_NAME_SIZE db 0
+func_starts: times MAX_FUNCS dw 0
+func_ends: times MAX_FUNCS dw 0
+func_count db 0
+
+; Стек вызовов
+call_stack: times MAX_STACK_DEPTH * 4 db 0
+stack_ptr dw call_stack
+
+; Команды оболочки
 cmd_help db "help",0
 cmd_shutdown db "shutdown",0
 cmd_reboot db "reboot",0
@@ -154,7 +179,7 @@ cmd_ls db "ls", 0
 cmd_logcat db "logcat", 0
 cmd_simple_boot db "sb-version", 0
 cmd_run db "run",0 
-
+cmd_learn db "learn-yscr", 0
 
 ; Команды скриптов
 script_print db "PRINT",0
@@ -164,14 +189,16 @@ script_exit db "EXIT",0
 script_set db "SET",0
 script_input db "INPUT",0
 script_if db "IF",0
-
-; Операторы IF
-op_eq db "EQ",0
-op_ne db "NE",0
-op_gt db "GT",0
-op_lt db "LT",0
-op_ge db "GE",0
-op_le db "LE",0
+script_func db "FUNC",0
+script_endfunc db "ENDFUNC",0
+script_call db "CALL",0
+script_return db "RETURN",0
+script_import db "IMPORT",0
+script_runcode db "RUNCODE",0
+script_time db "TIME",0
+script_random db "RANDOM",0
+script_type db "TYPE",0
+script_printtime db "PRINTTIME",0
 
 ; ======== ОСНОВНОЕ ЯДРО ========
 kernel_main:
@@ -205,7 +232,6 @@ shell_loop:
 
 ; ======== ОБРАБОТКА КОМАНД ========
 process_command:
-    ; Проверка пустой команды
     cmp byte [command_buffer], 0
     je .empty
     
@@ -238,7 +264,7 @@ process_command:
     mov di, cmd_file
     call strcmp
     je .file
-
+    
     mov si, command_buffer
     mov di, cmd_clear
     call strcmp
@@ -288,20 +314,27 @@ process_command:
     mov di, cmd_logcat
     call strcmp
     je .logcat
+
+    mov si, command_buffer
+    mov di, cmd_learn
+    call strcmp
+    je .learn
     
     mov si, command_buffer
     mov di, cmd_run
     call strcmp
     je .run
     
-    ; Неизвестная команда
     mov si, unknown_cmd
     call print_string
     ret
 
 .empty:
     ret
-
+.learn:
+   mov si, learn_myl_msg
+   call print_string
+   ret
 .clear:
     mov ax, 0x0003
     int 0x10
@@ -349,35 +382,14 @@ process_command:
     call print_string
     ret
 
-
 .shutdown:
-    ; Попытка выключения через ACPI
-    mov ax, 0x5301
-    xor bx, bx
-    int 0x15
-    jc .shutdown_fail
-    
-    mov ax, 0x530E
-    xor bx, bx
-    mov cx, 0x102
-    int 0x15
-    jc .shutdown_fail
-    
     mov ax, 0x5307
     mov bx, 0x0001
     mov cx, 0x0003
     int 0x15
-
-.shutdown_fail:
-    ; Если ACPI не сработал - холодная перезагрузка
-    mov ax, 0x0
-    out 0x70, al
-    mov al, 0x02
-    out 0x71, al
-    jmp .reboot
+    ret
 
 .reboot:
-    ; Перезагрузка
     mov al, 0xFE
     out 0x64, al
     ret
@@ -392,116 +404,154 @@ process_command:
     ret
 
 .file:
-    ; Запрос имени файла
     mov si, file_prompt
     call print_string
-    
-    ; Чтение имени файла в буфер
     mov di, current_file
     call read_line
-    
-    ; Проверка пустого имени
     cmp byte [current_file], 0
     je .file_error
-    
-    ; Поиск файла
     mov si, current_file
     call find_file
     jc .file_not_found
-    
-    ; Вывод содержимого
     mov si, bx
     call print_string
     mov si, newline
     call print_string
     ret
-    
 .file_not_found:
     mov si, file_not_found
     call print_string
     ret
-    
 .file_error:
-    mov si, unknown_cmd
-    call print_string
     ret
 
 .list:
-    ; Вывод списка файлов
     call list_files
     ret
 
 .run:
-    ; Запрос имени скрипта
     mov si, run_prompt
     call print_string
-    
-    ; Чтение имени файла
     mov di, current_file
     call read_line
-    
-    ; Проверка пустого имени
     cmp byte [current_file], 0
     je .run_error
-    
-    ; Поиск файла
     mov si, current_file
     call find_file
     jc .file_not_found
-    
-    ; Запуск скрипта
     call run_script
     ret
-
 .run_error:
-    mov si, unknown_cmd
-    call print_string
     ret
 
 ; ======== ИНТЕРПРЕТАТОР СКРИПТОВ ========
-; ======== ИНТЕРПРЕТАТОР СКРИПТОВ ========
 run_script:
-    ; BX = указатель на начало скрипта
     pusha
-    
-    ; Сохраняем указатель на скрипт
     mov [.script_ptr], bx
-    mov [.original_script], bx
-    
-    ; Номер текущей строки
     mov word [.line_number], 0
-    
-    ; Инициализация переменных
+    mov byte [.skip_depth], 0
+    mov byte [.in_function], 0
     call init_variables
-    
-.loop:
-    ; Увеличиваем номер строки
-    inc word [.line_number]
-    
-    ; Загружаем текущий указатель
+
+.script_loop:
+    ; Проверка на конец файла
     mov si, [.script_ptr]
-    
-    ; Проверка конца скрипта
     cmp byte [si], 0
-    je .end_of_script
+    je .end_script
     
+    ; Проверка глубины пропуска
+    cmp byte [.skip_depth], 0
+    je .execute_mode
+    
+    ; Режим пропуска (объявление функции)
+    mov di, line_buffer
+    call read_script_line
+    mov [.script_ptr], si
+    
+    cmp byte [line_buffer], 0
+    je .next_line
+    
+    call extract_command
+    
+    ; Проверка на FUNC (вложенные функции)
+    mov si, command_buffer
+    mov di, script_func
+    call strcmp
+    je .skip_func_found
+    
+    ; Проверка на ENDFUNC
+    mov si, command_buffer
+    mov di, script_endfunc
+    call strcmp
+    je .skip_endfunc_found
+    
+    jmp .next_line
+
+.skip_func_found:
+    inc byte [.skip_depth]
+    jmp .next_line
+
+.skip_endfunc_found:
+    dec byte [.skip_depth]
+    jnz .next_line
+    
+    ; Сохранение конца функции
+    mov al, [func_count]
+    dec al
+    mov bl, 2
+    mul bl
+    mov si, ax
+    mov ax, [.script_ptr]
+    mov [func_ends + si], ax
+    
+    mov si, endfunc_msg
+    call print_string
+    jmp .next_line
+
+.execute_mode:
     ; Чтение строки
     mov di, line_buffer
     call read_script_line
-    
-    ; Сохраняем новый указатель
     mov [.script_ptr], si
     
-    ; Пропуск пустых строк и комментариев
     cmp byte [line_buffer], 0
     je .next_line
-    cmp byte [line_buffer], '#'
-    je .next_line
     
-    ; Разделение команды и аргументов
+    inc word [.line_number]
+    
     call extract_command
     
     ; Обработка команд
+    mov si, command_buffer
+    mov di, script_func
+    call strcmp
+    je .do_func
+    
+    mov si, command_buffer
+    mov di, script_call
+    call strcmp
+    je .do_call
+    
+    mov si, command_buffer
+    mov di, script_return
+    call strcmp
+    je .do_return
+    
+    mov si, command_buffer
+    mov di, script_endfunc
+    call strcmp
+    je .do_endfunc
+    
+    mov si, command_buffer
+    mov di, script_import
+    call strcmp
+    je .do_import
+    
+    mov si, command_buffer
+    mov di, script_runcode
+    call strcmp
+    je .do_runcode
+    
     mov si, command_buffer
     mov di, script_print
     call strcmp
@@ -528,62 +578,37 @@ run_script:
     je .do_input
     
     mov si, command_buffer
-    mov di, script_if
-    call strcmp
-    je .do_if
-    
-    mov si, command_buffer
     mov di, script_exit
     call strcmp
-    je .end_of_script
-    
-    ; Новые команды
-    mov si, command_buffer
-    mov di, script_goto
+    je .end_script
+
+     mov si, command_buffer
+    mov di, script_time
     call strcmp
-    je .do_goto
+    je .do_time
     
     mov si, command_buffer
-    mov di, script_syscall
+    mov di, script_random
     call strcmp
-    je .do_syscall
+    je .do_random
     
-    ; Неизвестная команда
-    mov si, script_error
-    call print_string
-    mov ax, [.line_number]
-    call print_number
-    mov si, newline
-    call print_string
-    
-    mov si, unknown_script_cmd
-    call print_string
     mov si, command_buffer
-    call print_string
-    mov si, newline
-    call print_string
+    mov di, script_type
+    call strcmp
+    je .do_type
+    
+    mov si, command_buffer
+    mov di, script_printtime
+    call strcmp
+    je .do_printtime
+    
+    jmp .next_line
 
 .next_line:
-    jmp .loop
+    jmp .script_loop
 
 .do_print:
-    ; Проверка, является ли аргумент переменной
-    mov si, .args_buffer
-    call is_variable
-    jc .print_normal
-    
-    ; Вывод значения переменной
-    mov di, var_value_buffer
-    call get_var_value
-    mov si, var_value_buffer
-    call print_string
-    mov si, newline
-    call print_string
-    jmp .next_line
-    
-.print_normal:
-    ; Вывод обычного текста
-    mov si, .args_buffer
+    mov si, args_buffer
     call print_string
     mov si, newline
     call print_string
@@ -602,422 +627,450 @@ run_script:
     jmp .next_line
 
 .do_set:
-    ; Установка переменной: SET var value
-    ; Извлечь имя переменной
-    mov si, .args_buffer
+    mov si, args_buffer
     mov di, var_name_buffer
     call extract_word
+    mov al, [var_name_buffer]
+    cmp al, 'A'
+    jb .set_error
+    cmp al, 'Z'
+    ja .set_error
     
-    ; Извлечь значение
-    mov si, .args_buffer
+    mov si, args_buffer
     call skip_word
-    mov si, .args_buffer
-    mov di, var_value_buffer
-    call extract_word
-    
-    ; Преобразовать значение в число
-    mov si, var_value_buffer
+    call skip_spaces
     call atoi
-    mov [.temp_value], ax
-    
-    ; Сохранить значение в переменную
-    mov si, var_name_buffer
-    mov ax, [.temp_value]
-    call set_var_value
+    mov bx, variables
+    sub al, 'A'
+    movzx di, al
+    shl di, 1
+    mov [bx+di], ax
+    jmp .next_line
+
+.set_error:
     jmp .next_line
 
 .do_input:
-    ; Ввод значения: INPUT var
-    mov si, .args_buffer
+    mov si, args_buffer
     mov di, var_name_buffer
     call extract_word
+    mov al, [var_name_buffer]
+    cmp al, 'A'
+    jb .input_error
+    cmp al, 'Z'
+    ja .input_error
     
-    ; Вывод приглашения
     mov si, input_prompt
     call print_string
     
-    ; Чтение значения
     mov di, input_buffer
     call read_line
     
-    ; Преобразовать в число
     mov si, input_buffer
     call atoi
-    mov [.temp_value], ax
-    
-    ; Сохранить значение в переменную
-    mov si, var_name_buffer
-    mov ax, [.temp_value]
-    call set_var_value
+    mov bx, variables
+    sub byte [var_name_buffer], 'A'
+    movzx di, byte [var_name_buffer]
+    shl di, 1
+    mov [bx+di], ax
     jmp .next_line
 
-.do_if:
-    ; Формат: IF var1 op var2 command
-    ; Извлечь var1
-    mov si, .args_buffer
-    mov di, var_name_buffer
-    call extract_word
-    mov si, var_name_buffer
-    call get_var_value_num
-    mov [.var1_value], ax
+.input_error:
+    jmp .next_line
+
+.do_func:
+    mov al, [func_count]
+    cmp al, MAX_FUNCS
+    jge .func_table_full
     
-    ; Извлечь оператор
-    mov si, .args_buffer
-    call skip_word
-    mov si, .args_buffer
-    mov di, .operator
+    ; Извлечение имени функции
+    mov si, args_buffer
+    mov di, func_name_buf
     call extract_word
     
-    ; Извлечь var2
-    mov si, .args_buffer
-    call skip_word
-    mov si, .args_buffer
-    mov di, var_name_buffer
-    call extract_word
-    mov si, var_name_buffer
-    call get_var_value_num
-    mov [.var2_value], ax
+    ; Проверка существования
+    call find_function
+    jnc .skip_adding
     
-    ; Извлечь команду
-    mov si, .args_buffer
-    call skip_word
-    mov si, .args_buffer
-    mov di, .command
-    call extract_word
-    
-    ; Извлечь аргументы команды
-    mov si, .args_buffer
-    call skip_word
-    mov si, .args_buffer
-    mov di, .command_args
+    ; Сохранение имени
+    movzx ax, byte [func_count]
+    mov di, FUNC_NAME_SIZE
+    mul di
+    mov di, func_names
+    add di, ax
+    mov si, func_name_buf
     call strcpy
     
-    ; Проверка условия
-    mov si, .operator
-    mov di, op_eq
-    call strcmp
-    je .check_eq
+    ; Сохранение начального адреса
+    movzx si, byte [func_count]
+    shl si, 1
+    mov ax, [.script_ptr]
+    mov [func_starts + si], ax
     
-    mov si, .operator
-    mov di, op_ne
-    call strcmp
-    je .check_ne
-    
-    mov si, .operator
-    mov di, op_gt
-    call strcmp
-    je .check_gt
-    
-    mov si, .operator
-    mov di, op_lt
-    call strcmp
-    je .check_lt
-    
-    mov si, .operator
-    mov di, op_ge
-    call strcmp
-    je .check_ge
-    
-    mov si, .operator
-    mov di, op_le
-    call strcmp
-    je .check_le
-    
-    ; Неизвестный оператор
-    jmp .next_line
-
-.check_eq:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    je .condition_true
-    jmp .next_line
-
-.check_ne:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    jne .condition_true
-    jmp .next_line
-
-.check_gt:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    jg .condition_true
-    jmp .next_line
-
-.check_lt:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    jl .condition_true
-    jmp .next_line
-
-.check_ge:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    jge .condition_true
-    jmp .next_line
-
-.check_le:
-    mov ax, [.var1_value]
-    cmp ax, [.var2_value]
-    jle .condition_true
-    jmp .next_line
-
-.condition_true:
-    ; Сохраняем текущее состояние
-    push word [.script_ptr]
-    push word [.line_number]
-    
-    ; Выполнить команду
-    mov si, .command
-    mov di, script_print
-    call strcmp
-    je .exec_print
-    
-    ; Добавить другие команды при необходимости
-    jmp .condition_done
-
-.exec_print:
-    mov si, .command_args
+    mov byte [.skip_depth], 1
+    mov si, func_declared
+    call print_string
+    mov si, func_name_buf
     call print_string
     mov si, newline
     call print_string
-
-.condition_done:
-    ; Восстанавливаем состояние
-    pop word [.line_number]
-    pop word [.script_ptr]
+    
+    inc byte [func_count]
     jmp .next_line
 
-.do_goto:
-    ; Формат: GOTO метка
-    ; Извлечь имя метки
-    mov si, .args_buffer
-    mov di, .goto_label
+.skip_adding:
+    mov byte [.skip_depth], 1
+    jmp .next_line
+
+.do_call:
+    mov si, args_buffer
+    mov di, func_name_buf
     call extract_word
     
-    ; Поиск метки в скрипте
-    mov si, [.original_script]  ; Начало скрипта
-    mov word [.current_line], 0
-    mov [.search_ptr], si
-
-.search_label:
-    ; Чтение строки
-    mov di, line_buffer
-    call read_script_line
-    mov [.search_ptr], si
+    call find_function
+    jc .func_not_found
     
-    ; Проверка конца скрипта
-    cmp byte [line_buffer], 0
-    je .label_not_found
+    ; Проверка глубины стека
+    mov ax, [stack_ptr]
+    cmp ax, call_stack + MAX_STACK_DEPTH * 4
+    jae .stack_overflow
     
-    ; Проверка, является ли строка меткой
-    cmp byte [line_buffer], ':'
-    jne .next_search_line
+    ; Сохранение контекста
+    mov di, [stack_ptr]
+    mov ax, [.script_ptr]
+    mov [di], ax
+    mov ax, [.line_number]
+    mov [di+2], ax
+    add word [stack_ptr], 4
     
-    ; Сравнить имя метки
-    mov si, line_buffer + 1  ; Пропустить ':'
-    mov di, .goto_label
-    call strcmp
-    je .label_found
+    ; Установка нового указателя
+    movzx si, bl
+    shl si, 1
+    mov ax, [func_starts + si]
+    mov [.script_ptr], ax
+    mov word [.line_number], 0
+    
+    jmp .script_loop
 
-.next_search_line:
-    jmp .search_label
-
-.label_found:
-    ; Установить указатель на следующую строку после метки
-    mov si, [.search_ptr]
-    mov [.script_ptr], si
-    mov word [.line_number], 0  ; Сбросить счетчик строк
-    jmp .loop
-
-.label_not_found:
-    mov si, label_not_found_msg
-    call print_string
-    mov si, .goto_label
-    call print_string
-    mov si, newline
+.do_return:
+    mov ax, [stack_ptr]
+    cmp ax, call_stack
+    jle .stack_empty
+    
+    sub word [stack_ptr], 4
+    mov si, [stack_ptr]
+    mov ax, [si+2]
+    mov [.line_number], ax
+    mov ax, [si]
+    mov [.script_ptr], ax
+    
+    mov si, return_msg
     call print_string
     jmp .next_line
 
-.do_syscall:
-    ; Формат: SYSCALL команда
-    ; Извлечь имя команды
-    mov si, .args_buffer
-    mov di, .syscall_cmd
+.do_endfunc:
+    ; ENDFUNC во время выполнения = возврат
+    jmp .do_return
+
+.do_import:
+    mov si, args_buffer
+    mov di, import_buf
     call extract_word
     
-    ; Выполнить системную команду
-    mov si, .syscall_cmd
-    mov di, syscall_help
-    call strcmp
-    je .sys_help
+    mov si, import_buf
+    call find_file
+    jc .import_error
     
-    mov si, .syscall_cmd
-    mov di, syscall_clear
-    call strcmp
-    je .sys_clear
-    
-    mov si, .syscall_cmd
-    mov di, syscall_neofetch
-    call strcmp
-    je .sys_neofetch
-
-    mov si, .syscall_cmd
-    mov di, syscall_shutdown
-    call strcmp
-    je .sys_shutdown
-
-    mov si, .syscall_cmd
-    mov di, syscall_info_myl
-    call strcmp
-    je .sys_info_myl
-
-    mov si, .syscall_cmd
-    mov di, syscall_learn
-    call strcmp
-    je .sys_learn_myl
-    
-    ; Неизвестная системная команда
-    mov si, unknown_syscall_msg
+    mov si, importing_msg
     call print_string
-    mov si, .syscall_cmd
+    mov si, import_buf
     call print_string
     mov si, newline
     call print_string
-    jmp .next_line
-
-.sys_help:
-    mov si, help_msg
-    call print_string
-    jmp .next_line
-
-.sys_clear:
-    mov ax, 0x0003
-    int 0x10
-    jmp .next_line
-
-.sys_neofetch:
-    mov si, neofetch_msg
-    call print_string
-    jmp .next_line
-
-.sys_shutdown:
-    ; Попытка выключения через ACPI
-    mov ax, 0x5301
-    xor bx, bx
-    int 0x15
     
-    mov ax, 0x530E
-    xor bx, bx
-    mov cx, 0x102
-    int 0x15
+    mov si, bx
+    call parse_functions
+    jmp .next_line
+
+.do_runcode:
+    mov si, args_buffer
+    mov di, import_buf
+    call extract_word
     
-    mov ax, 0x5307
-    mov bx, 0x0001
-    mov cx, 0x0003
-    int 0x15
-
-.sys_info_myl:
-    mov si, info_myl_msg
+    mov si, import_buf
+    call find_file
+    jc .import_error
+    
+    ; Проверка глубины стека
+    mov ax, [stack_ptr]
+    cmp ax, call_stack + MAX_STACK_DEPTH * 4
+    jae .stack_overflow
+    
+    ; Сохранение контекста
+    mov di, [stack_ptr]
+    mov ax, [.script_ptr]
+    mov [di], ax
+    mov ax, [.line_number]
+    mov [di+2], ax
+    add word [stack_ptr], 4
+    
+    ; Установка нового скрипта
+    mov [.script_ptr], bx
+    mov word [.line_number], 0
+    
+    mov si, runcode_msg
     call print_string
+    mov si, import_buf
+    call print_string
+    mov si, newline
+    call print_string
+    
+    jmp .script_loop
+
+.do_time:
+    mov si, time_msg
+    call print_string
+    
+    mov si, args_buffer
+    call atoi       ; Получаем секунды в AX
+    
+    ; Выводим количество секунд
+    call itoa
+    mov si, temp_str
+    call print_string
+    mov si, seconds_msg
+    call print_string
+    
+    ; Преобразуем секунды в тики (18.2 тика/сек)
+    mov bx, TICKS_PER_SECOND
+    mul bx          ; AX = секунды * TICKS_PER_SECOND
+    
+    ; Вызываем функцию ожидания
+    call wait_ticks
+    
     jmp .next_line
 
-.sys_learn_myl:
-    mov si, learn_myl_msg
+.do_random:
+    ; Генерируем случайное число от 10 до 99
+    call generate_random
+    mov [var_R], ax
+    
+    mov si, random_msg
     call print_string
+    
+    ; Преобразуем число в строку и выводим
+    mov ax, [var_R]
+    call itoa
+    mov si, temp_str
+    call print_string
+    mov si, newline
+    call print_string
+    
     jmp .next_line
 
+.do_type:
+    mov si, type_msg
+    call print_string
+    
+    mov si, args_buffer
+    mov ax, 1      ; Задержка 1 тик (~55 мс)
+    call type_effect
+    
+    jmp .next_line
 
+.do_printtime:
+    mov si, args_buffer
+    mov ax, 9      ; Задержка 9 тиков (~0.5 сек)
+    call type_effect
+    
+    jmp .next_line
 
-
-.end_of_script:
+.end_script:
     mov si, script_end_msg
     call print_string
     popa
     ret
 
-; ... (существующие данные) ...
+.stack_overflow:
+    mov si, stack_overflow
+    call print_string
+    jmp .end_script
 
-; Новые данные для интерпретатора
+.func_table_full:
+    mov si, max_depth_msg
+    call print_string
+    jmp .next_line
+
+.func_not_found:
+    mov si, func_not_found
+    call print_string
+    mov si, func_name_buf
+    call print_string
+    mov si, newline
+    call print_string
+    jmp .next_line
+
+.import_error:
+    mov si, file_not_found
+    call print_string
+    jmp .next_line
+
+.stack_empty:
+    jmp .end_script
+
+; Данные интерпретатора
 .line_number dw 0
 .script_ptr dw 0
-.original_script dw 0
-.search_ptr dw 0
-.current_line dw 0
-.args_buffer times 128 db 0
-.temp_value dw 0
-.var1_value dw 0
-.var2_value dw 0
-.operator times 8 db 0
-.command times 16 db 0
-.command_args times 64 db 0
-.goto_label times 16 db 0
-.syscall_cmd times 16 db 0
+.skip_depth db 0
+.in_function db 0
+args_buffer times COMMAND_BUF_SIZE db 0
 
-; Новые команды скриптов
-script_goto db "GOTO",0
-script_syscall db "SYSCALL",0
-
-; Системные команды для SYSCALL
-syscall_help db "help",0
-syscall_clear db "clear",0
-syscall_neofetch db "neofetch",0
-syscall_shutdown db "shutdown",0
-syscall_reboot db "reboot",0
-syscall_info_myl db "info_myl", 0
-syscall_learn db "learn_myl", 0
-
-; Сообщения
-label_not_found_msg db "Label not found: ",0
-unknown_syscall_msg db "Unknown SYSCALL command: ",0
-
-; ======== ФУНКЦИЯ ЧТЕНИЯ СТРОКИ СКРИПТА ========
-read_script_line:
-    push ax
+; ======== СИСТЕМНЫЕ ФУНКЦИИ ========
+; Генерация случайного числа от 10 до 99
+generate_random:
     push cx
-    push di
+    push dx
     
-    mov cx, 79  ; Максимальная длина строки
-    xor al, al
+    ; Используем системный таймер для генерации случайного числа
+    mov ah, 0x00
+    int 0x1A        ; Получаем тики в CX:DX
     
-.read_char:
-    lodsb       ; Загружаем символ из [SI] в AL, увеличиваем SI
+    ; Используем младшие биты для генерации числа
+    mov ax, dx      ; Используем младшую часть
+    and ax, 0x00FF  ; Берем младший байт
     
-    ; Проверка конца строки/скрипта
-    cmp al, 0
-    je .done
-    cmp al, 13   ; CR
-    je .handle_cr
-    cmp al, 10   ; LF
-    je .handle_lf
+    ; Масштабируем до диапазона 0-89
+    xor dx, dx
+    mov cx, 90
+    div cx          ; DX = остаток от 0 до 89
     
-    ; Сохраняем символ в буфере
-    stosb
-    loop .read_char
-    jmp .done
-
-.handle_cr:
-    ; Пропускаем следующий LF если есть
-    cmp byte [si], 10
-    jne .done
-    inc si      ; Пропускаем LF
-    jmp .done
-
-.handle_lf:
-    ; Ничего не делаем, просто завершаем строку
-    jmp .done
-
-.done:
-    ; Завершаем строку нулем
-    mov al, 0
-    stosb
+    ; Добавляем 10 для получения диапазона 10-99
+    add dx, 10
+    mov ax, dx
     
-    pop di
+    pop dx
     pop cx
-    pop ax
     ret
 
-; ======== ФУНКЦИИ РАБОТЫ С ПЕРЕМЕННЫМИ ========
+; Ожидание указанного количества тиков
+; Вход: AX - количество тиков для ожидания
+wait_ticks:
+    pusha
+    mov [.ticks], ax
+    
+    ; Получаем текущее время
+    mov ah, 0x00
+    int 0x1A        ; CX:DX = текущее время в тиках
+    mov [.start_low], dx
+    mov [.start_high], cx
+    
+    ; Вычисляем время окончания
+    add dx, [.ticks]
+    adc cx, 0
+    mov [.end_low], dx
+    mov [.end_high], cx
+    
+.wait_loop:
+    ; Получаем текущее время
+    mov ah, 0x00
+    int 0x1A        ; CX:DX = текущее время
+    
+    ; Сравниваем с временем окончания
+    cmp cx, [.end_high]
+    jb .wait_loop   ; Младше - продолжаем ждать
+    ja .done        ; Старше - выходим
+    
+    ; Старшие слова равны, сравниваем младшие
+    cmp dx, [.end_low]
+    jb .wait_loop
+    
+.done:
+    popa
+    ret
+.ticks dw 0
+.start_low dw 0
+.start_high dw 0
+.end_low dw 0
+.end_high dw 0
+
+; Эффект печати с задержкой
+; Вход: SI - строка, AX - количество тиков задержки на символ
+type_effect:
+    pusha
+    mov [.delay_ticks], ax
+    
+    ; Сохраняем позицию курсора
+    mov ah, 0x03
+    xor bh, bh
+    int 0x10
+    mov [.cursor_pos], dx
+    
+.next_char:
+    lodsb
+    test al, al
+    jz .done
+    
+    ; Пропускаем управляющие символы
+    cmp al, 13 ; CR
+    je .next_char
+    cmp al, 10 ; LF
+    je .next_char
+    
+    ; Выводим символ
+    mov ah, 0x0E
+    xor bh, bh
+    int 0x10
+    
+    ; Задержка
+    mov ax, [.delay_ticks]
+    call wait_ticks
+    
+    jmp .next_char
+    
+.done:
+    ; Переводим строку после завершения
+    mov si, newline
+    call print_string
+    popa
+    ret
+.delay_ticks dw 0
+.cursor_pos dw 0
+
+; Преобразование числа в строку
+; Вход: AX - число
+; Выход: temp_str - строка с числом
+itoa:
+    pusha
+    mov di, temp_str
+    mov cx, 0
+    mov bx, 10
+    
+    ; Обрабатываем ноль отдельно
+    test ax, ax
+    jnz .convert
+    mov byte [di], '0'
+    inc di
+    jmp .done
+    
+.convert:
+    xor dx, dx
+    div bx
+    add dl, '0'
+    push dx
+    inc cx
+    test ax, ax
+    jnz .convert
+    
+.store:
+    pop ax
+    stosb
+    loop .store
+    
+.done:
+    mov byte [di], 0 ; Завершающий ноль
+    popa
+    ret
+
 init_variables:
     pusha
     mov cx, 26
@@ -1027,318 +1080,224 @@ init_variables:
     popa
     ret
 
-; Проверить, является ли строка именем переменной
-; Вход: SI = строка
-; Выход: CF=1 если не переменная, CF=0 если переменная
-is_variable:
+find_function:
+    push cx
+    push si
+    push di
+    mov cl, [func_count]
+    test cl, cl
+    jz .not_found
+    
+    xor bx, bx   ; Индекс функции
+    mov di, func_name_buf
+
+.search_loop:
+    ; Вычисление позиции имени
+    mov ax, bx
+    mov si, FUNC_NAME_SIZE
+    mul si
+    mov si, func_names
+    add si, ax
+    
+    ; Сравнение строк
+    push bx
+    push di
+    call strcmp
+    pop di
+    pop bx
+    je .found
+    
+    inc bx
+    dec cl
+    jnz .search_loop
+
+.not_found:
+    stc
+    pop di
+    pop si
+    pop cx
+    ret
+
+.found:
+    clc
+    pop di
+    pop si
+    pop cx
+    ret
+
+parse_functions:
     pusha
-    mov di, var_name_buffer
+    mov [.file_ptr], si
+    mov byte [.skip_depth], 0
+    
+.parse_loop:
+    mov si, [.file_ptr]
+    cmp byte [si], 0
+    je .done
+    
+    mov di, line_buffer
+    call read_script_line
+    mov [.file_ptr], si
+    
+    cmp byte [line_buffer], 0
+    je .parse_loop
+    
+    call extract_command
+    
+    cmp byte [.skip_depth], 0
+    je .not_skipping
+    
+    ; Режим пропуска
+    mov si, command_buffer
+    mov di, script_func
+    call strcmp
+    je .skip_func
+    
+    mov si, command_buffer
+    mov di, script_endfunc
+    call strcmp
+    je .skip_endfunc
+    
+    jmp .parse_loop
+
+.not_skipping:
+    mov si, command_buffer
+    mov di, script_func
+    call strcmp
+    jne .parse_loop
+    
+    ; Проверка свободного места
+    mov al, [func_count]
+    cmp al, MAX_FUNCS
+    jge .done
+    
+    ; Извлечение имени
+    mov si, args_buffer
+    mov di, func_name_buf
+    call extract_word
+    
+    ; Проверка существования
+    call find_function
+    jnc .parse_loop
+    
+    ; Сохранение имени
+    movzx ax, byte [func_count]
+    mov di, FUNC_NAME_SIZE
+    mul di
+    mov di, func_names
+    add di, ax
+    mov si, func_name_buf
     call strcpy
     
-    ; Проверка длины
-    mov si, var_name_buffer
-    call strlen
-    cmp cx, 1
-    jne .not_var
+    ; Сохранение начального адреса
+    movzx si, byte [func_count]
+    shl si, 1
+    mov ax, [.file_ptr]
+    mov [func_starts + si], ax
     
-    ; Проверка диапазона A-Z
-    mov al, [var_name_buffer]
-    cmp al, 'A'
-    jb .not_var
-    cmp al, 'Z'
-    ja .not_var
+    mov byte [.skip_depth], 1
+    inc byte [func_count]
+    jmp .parse_loop
+
+.skip_func:
+    inc byte [.skip_depth]
+    jmp .parse_loop
+
+.skip_endfunc:
+    dec byte [.skip_depth]
+    jnz .parse_loop
     
-    clc
-    popa
-    ret
-
-.not_var:
-    stc
-    popa
-    ret
-
-; Получить значение переменной как строку
-; Вход: SI = имя переменной
-; Выход: DI = буфер со значением
-get_var_value:
-    pusha
-    call get_var_value_num
-    mov di, var_value_buffer
-    call itoa
-    popa
-    mov di, var_value_buffer
-    ret
-
-; Получить числовое значение переменной
-; Вход: SI = имя переменной
-; Выход: AX = значение
-get_var_value_num:
-    push bx
-    mov al, [si]
-    sub al, 'A'
+    ; Сохранение конца функции
+    mov al, [func_count]
+    dec al
     mov bl, 2
     mul bl
-    mov bx, ax
-    mov ax, [variables + bx]
-    pop bx
-    ret
+    mov si, ax
+    mov ax, [.file_ptr]
+    mov [func_ends + si], ax
+    jmp .parse_loop
 
-; Установить значение переменной
-; Вход: SI = имя переменной, AX = значение
-set_var_value:
-    push bx
-    mov bl, [si]
-    sub bl, 'A'
-    movzx bx, bl
-    shl bx, 1
-    mov [variables + bx], ax
-    pop bx
-    ret
-
-; ======== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ========
-; Чтение строки из скрипта
-
-.check_lf:
-    cmp byte [si], 10
-    jne .exit
-    inc si
-    
-.exit:
+.done:
     popa
     ret
 
-; Извлечь команду и аргументы
-extract_command:
-    pusha
-    mov si, line_buffer
-    mov di, command_buffer
-    mov cx, 64
-    
-    ; Копируем команду до первого пробела
-.copy_cmd:
-    lodsb
-    cmp al, ' '
-    je .space_found
-    cmp al, 0
-    je .end_of_line
-    stosb
-    loop .copy_cmd
-    jmp .end_of_line
+.file_ptr dw 0
+.skip_depth db 0
 
-.space_found:
-    ; Завершаем команду
-    mov al, 0
-    stosb
-    
-    ; Копируем аргументы в буфер
-    mov di, run_script.args_buffer
-.copy_args:
-    lodsb
-    cmp al, 0
-    je .end_of_line
-    stosb
-    jmp .copy_args
-
-.end_of_line:
-    mov al, 0
-    stosb
-    popa
-    ret
-
-; Извлечь слово (до пробела)
-; Вход: SI = исходная строка, DI = буфер назначения
-extract_word:
-    pusha
-    ; Пропустить пробелы
-.skip_spaces:
-    lodsb
-    cmp al, ' '
-    je .skip_spaces
-    cmp al, 0
-    je .done
-    
-    ; Копировать слово
-.copy_word:
-    stosb
-    lodsb
-    cmp al, ' '
-    je .space_found
-    cmp al, 0
-    je .done
-    jmp .copy_word
-
-.space_found:
-    mov al, 0
-    stosb
-    dec si ; Возвращаемся к пробелу
-    jmp .done
-
-.done:
-    mov al, 0
-    stosb
-    popa
-    ret
-
-; Пропустить слово
-; Вход: SI = строка
-skip_word:
-    pusha
-.skip_spaces:
-    lodsb
-    cmp al, ' '
-    je .skip_spaces
-    cmp al, 0
-    je .done
-    
-    ; Пропустить слово
-.skip_char:
-    lodsb
-    cmp al, ' '
-    je .done
-    cmp al, 0
-    je .done
-    jmp .skip_char
-
-.done:
-    dec si
-    popa
-    ret
-
-; Преобразовать строку в число
-; Вход: SI = строка
-; Выход: AX = число
-atoi:
-    push bx
-    push cx
-    push dx
-    push si
-    xor ax, ax
-    xor cx, cx
-    mov bx, 10
-    
-.convert_loop:
-    lodsb
-    test al, al
-    jz .done
-    cmp al, '0'
-    jb .done
-    cmp al, '9'
-    ja .done
-    sub al, '0'
-    mov cl, al
-    mul bx
-    add ax, cx
-    jmp .convert_loop
-    
-.done:
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    ret
-
-; Преобразовать число в строку
-; Вход: AX = число, DI = буфер назначения
-itoa:
-    pusha
-    mov bx, 10
-    xor cx, cx
-    test ax, ax
-    jnz .convert
-    mov al, '0'
-    stosb
-    jmp .done
-    
-.convert:
-    xor dx, dx
-    div bx
-    push dx
-    inc cx
-    test ax, ax
-    jnz .convert
-    
-.store:
-    pop ax
-    add al, '0'
-    stosb
-    loop .store
-
-.done:
-    mov al, 0
-    stosb
-    popa
-    ret
-
-; Длина строки
-; Вход: SI = строка
-; Выход: CX = длина
-strlen:
-    push si
-    xor cx, cx
-.loop:
-    lodsb
-    test al, al
-    jz .done
-    inc cx
-    jmp .loop
-.done:
-    pop si
-    ret
-
-; ... (остальные функции: list_files, text_editor, save_to_filesystem, find_file, 
-; print_string, read_line, strcmp, strcpy) ...
-
-; Пример реализации strcpy для полноты
-
-
+; ======== ФУНКЦИИ ФАЙЛОВОЙ СИСТЕМЫ ========
 list_files:
     mov si, list_header
     call print_string
-    
-    mov cx, 5
+    mov cx, MAX_FILES
     mov bx, files
-    xor dx, dx  ; Счетчик файлов
-    
+    xor dx, dx
 .list_loop:
-    ; Проверка, занят ли слот
     cmp byte [bx], 0
     je .next_file
-    
-    ; Увеличиваем счетчик файлов
     inc dx
-    
-    ; Вывод префикса
     mov si, list_entry
     call print_string
-    
-    ; Вывод имени файла
     mov si, bx
     call print_string
-    
-    ; Перенос строки
     mov si, newline
     call print_string
-
 .next_file:
-    add bx, file_size
+    add bx, FILE_SIZE
     loop .list_loop
-    
-    ; Проверка, найдены ли файлы
     cmp dx, 0
     jne .done
-    
-    ; Если файлов нет
     mov si, list_empty
     call print_string
-    
 .done:
+    ret
+
+find_file:
+    mov cx, MAX_FILES
+    mov bx, files
+.search_loop:
+    push si
+    push bx
+    mov di, bx
+    call strcmp
+    pop bx
+    pop si
+    je .found
+    add bx, FILE_SIZE
+    loop .search_loop
+    stc
+    ret
+.found:
+    lea si, [bx + FILE_NAME_SIZE] ; Содержимое файла
+    mov bx, si
+    clc
+    ret
+
+save_to_filesystem:
+    mov cx, MAX_FILES
+    mov bx, files
+.next_slot:
+    cmp byte [bx], 0
+    je .found_slot
+    add bx, FILE_SIZE
+    loop .next_slot
+    mov si, fs_full_msg
+    call print_string
+    stc
+    ret
+.found_slot:
+    mov si, current_file
+    mov di, bx
+    call strcpy
+    mov si, file_buffer
+    add di, FILE_NAME_SIZE
+    call strcpy
+    clc
     ret
 
 ; ======== ТЕКСТОВЫЙ РЕДАКТОР ========
 text_editor:
-    ; Очистка буфера
     mov di, file_buffer
-    mov cx, 256
+    mov cx, FILE_CONTENT_SIZE
     xor al, al
     rep stosb
     
@@ -1346,34 +1305,27 @@ text_editor:
     call print_string
     
     mov di, file_buffer
-    mov cx, 0          ; Счетчик символов
+    mov cx, 0
     
 .edit_loop:
-    ; Чтение клавиши
     mov ah, 0
     int 0x16
     
-    ; ESC - сохранение
-    cmp ah, 0x01
+    cmp ah, 0x01   ; ESC
     je .save_file
     
-    ; Backspace
-    cmp ah, 0x0E
+    cmp ah, 0x0E   ; Backspace
     je .backspace
     
-    ; Enter
-    cmp al, 0x0D
+    cmp al, 0x0D   ; Enter
     je .newline
     
-    ; Проверка на переполнение
-    cmp cx, 254
+    cmp cx, FILE_CONTENT_SIZE - 1
     jge .edit_loop
     
-    ; Вывод символа
     mov ah, 0x0E
     int 0x10
     
-    ; Сохранение в буфер
     stosb
     inc cx
     jmp .edit_loop
@@ -1384,8 +1336,6 @@ text_editor:
     dec di
     dec cx
     mov byte [di], 0
-    
-    ; Удаление на экране
     mov ah, 0x0E
     mov al, 8
     int 0x10
@@ -1401,7 +1351,6 @@ text_editor:
     int 0x10
     mov al, 10
     int 0x10
-    
     mov al, 13
     stosb
     inc cx
@@ -1411,77 +1360,23 @@ text_editor:
     jmp .edit_loop
 
 .save_file:
-    ; Запрос имени файла
     mov si, file_prompt
     call print_string
-    
     mov di, current_file
     call read_line
-    
-    ; Сохранение в ФС
+    cmp byte [current_file], 0
+    je .skip_save
     call save_to_filesystem
-    
-    ; Сообщение об успехе
+    jc .save_error
     mov si, file_saved_msg
     call print_string
     ret
-
-; ======== ФУНКЦИИ ФАЙЛОВОЙ СИСТЕМЫ ========
-save_to_filesystem:
-    ; Поиск свободного слота
-    mov cx, 5
-    mov bx, files
-.next_slot:
-    cmp byte [bx], 0
-    je .found_slot
-    add bx, file_size
-    loop .next_slot
-    ; Если не нашли - перезаписываем первый
-    mov bx, files
-
-.found_slot:
-    ; Копирование имени
-    mov si, current_file
-    mov di, bx
-    call strcpy
-    
-    ; Копирование содержимого
-    mov si, file_buffer
-    add di, file.content
-    call strcpy
+.skip_save:
     ret
-
-find_file:
-    ; SI = имя файла
-    mov cx, 5
-    mov bx, files
-.search_loop:
-    push si
-    push bx
-    mov di, bx
-    call strcmp
-    pop bx
-    pop si
-    je .found
-    
-    add bx, file_size
-    loop .search_loop
-    stc ; файл не найден
-    ret
-
-.found:
-    ; BX указывает на структуру файла
-    lea si, [bx + file.content]
-    mov bx, si
-    clc ; файл найден
+.save_error:
     ret
 
 ; ======== СЛУЖЕБНЫЕ ФУНКЦИИ ========
-print_number:
-    pusha
-    mov cx, 0
-    mov bx, 10
-
 print_string:
     pusha
     mov ah, 0x0E
@@ -1502,33 +1397,23 @@ read_line:
 .read_char:
     mov ah, 0
     int 0x16
-    
-    cmp al, 0x0D       ; Enter
+    cmp al, 0x0D
     je .done
-    
-    cmp ah, 0x0E       ; Backspace
+    cmp ah, 0x0E
     je .backspace
-    
-    cmp ah, 0x01       ; ESC
-    je .done
-    
-    cmp cx, 63
+    cmp cx, COMMAND_BUF_SIZE-1
     jge .read_char
-    
     stosb
     inc cx
-    
     mov ah, 0x0E
     int 0x10
     jmp .read_char
-
 .backspace:
     cmp cx, 0
     je .read_char
     dec di
     dec cx
     mov byte [di], 0
-    
     mov ah, 0x0E
     mov al, 8
     int 0x10
@@ -1537,11 +1422,9 @@ read_line:
     mov al, 8
     int 0x10
     jmp .read_char
-
 .done:
     mov al, 0
     stosb
-    
     mov ah, 0x0E
     mov al, 13
     int 0x10
@@ -1561,12 +1444,10 @@ strcmp:
     inc si
     inc di
     jmp .loop
-
 .equal:
     popa
     xor ax, ax
     ret
-
 .not_equal:
     popa
     mov ax, 1
@@ -1581,3 +1462,146 @@ strcpy:
     jnz .loop
     popa
     ret
+
+extract_word:
+    pusha
+.skip_spaces:
+    lodsb
+    cmp al, ' '
+    je .skip_spaces
+    cmp al, 0
+    je .done
+.copy:
+    stosb
+    lodsb
+    cmp al, ' '
+    je .space
+    cmp al, 0
+    je .done
+    jmp .copy
+.space:
+    mov al, 0
+    stosb
+.done:
+    mov al, 0
+    stosb
+    popa
+    ret
+
+skip_word:
+    pusha
+.skip_spaces:
+    lodsb
+    cmp al, ' '
+    je .skip_spaces
+    cmp al, 0
+    je .done
+.skip_char:
+    lodsb
+    cmp al, ' '
+    je .done
+    cmp al, 0
+    je .done
+    jmp .skip_char
+.done:
+    dec si
+    popa
+    ret
+
+read_script_line:
+    push ax
+    push cx
+    push di
+    mov cx, 79
+.read_char:
+    lodsb
+    cmp al, 0
+    je .done
+    cmp al, 13
+    je .handle_cr
+    cmp al, 10
+    je .handle_lf
+    stosb
+    loop .read_char
+    jmp .done
+.handle_cr:
+    cmp byte [si], 10
+    jne .done
+    inc si
+    jmp .done
+.handle_lf:
+    jmp .done
+.done:
+    mov al, 0
+    stosb
+    pop di
+    pop cx
+    pop ax
+    ret
+
+extract_command:
+    pusha
+    mov si, line_buffer
+    mov di, command_buffer
+    mov cx, COMMAND_BUF_SIZE
+.copy_cmd:
+    lodsb
+    cmp al, ' '
+    je .space
+    cmp al, 0
+    je .done
+    stosb
+    loop .copy_cmd
+    jmp .done
+.space:
+    mov al, 0
+    stosb
+    mov di, args_buffer
+.copy_args:
+    lodsb
+    cmp al, 0
+    je .done
+    stosb
+    jmp .copy_args
+.done:
+    mov al, 0
+    stosb
+    popa
+    ret
+
+atoi:
+    push bx
+    push cx
+    push dx
+    xor ax, ax
+    xor cx, cx
+    mov bx, 10
+.next_digit:
+    lodsb
+    test al, al
+    jz .done
+    cmp al, '0'
+    jb .done
+    cmp al, '9'
+    ja .done
+    sub al, '0'
+    xchg ax, cx
+    mul bx
+    add ax, cx
+    xchg ax, cx
+    jmp .next_digit
+.done:
+    mov ax, cx
+    pop dx
+    pop cx
+    pop bx
+    ret
+
+skip_spaces:
+    lodsb
+    cmp al, ' '
+    je skip_spaces
+    dec si
+    ret
+
+times 0x5000 - ($-$$) db 0
