@@ -1,5 +1,5 @@
 ASM = nasm
-QEMU = qemu-system-x86_64
+QEMU = qemu-system-i386
 CAT = cat
 
 all: os.img
