@@ -47,17 +47,34 @@ load_kernel:
     mov ss, ax
     mov sp, 0x7C00
 
-    mov ah, 0x02
-    mov al, 10       
-    mov ch, 0        
-    mov cl, 2        
-    mov dh, 0        
-    mov bx, 0x8000   
+    mov [boot_drive], dl  ; Сохраняем номер диска
+
+    ; Загрузка ядра с диска
+    mov bx, KERNEL_OFFSET
+    mov dh, 20          ; Читаем 20 секторов (10KB)
+    mov dl, [boot_drive]
+    call disk_load
+
+    ; Переход к ядру
+    jmp 0x0000:KERNEL_OFFSET
+
+disk_load:
+    push dx
+    mov ah, 0x02        ; Функция чтения диска
+    mov al, dh          ; Количество секторов
+    mov ch, 0x00        ; Цилиндр 0
+    mov dh, 0x00        ; Головка 0
+    mov cl, 0x02        ; Сектор 2 (после загрузчика)
     int 0x13
-    
-    mov si, msg_loading
+    jc .error           ; Ошибка если CF=1
+    pop dx
+    cmp al, dh          ; Проверка количества прочитанных секторов
+    jne .error
+    ret
+.error:
+    mov si, disk_err_msg
     call print_string
-    jmp 0x0000:0x8000
+    jmp $
 
 power_off:
     ; Выключение через APM
@@ -221,14 +238,16 @@ boot_drive: db 0
 cmd_buffer: times 33 db 0
 
 msg_menu:   db "Bootloader Menu:", 0x0D, 0x0A
-            db "1 - Load Kernel from 0x8000", 0x0D, 0x0A
+            db "1 - Load Kernel ", 0x0D, 0x0A
             db "2 - Power Off Computer", 0x0D, 0x0A
             db "3 - Test VGA Colors", 0x0D, 0x0A
             db "Enter command: ", 0
             
-msg_loading: db 0x0D, 0x0A, "Loading kernel...", 0x0D, 0x0A, 0
-msg_invalid: db 0x0D, 0x0A, "Invalid command! Try again", 0x0D, 0x0A, 0
-msg_error:  db 0x0D, 0x0A, "Disk read error!", 0x0D, 0x0A, 0
+msg_loading: db 0x0D, 0x0A, "Loading Kernel", 0x0D, 0x0A, 0
+msg_invalid: db 0x0D, 0x0A, "Error: command", 0x0D, 0x0A, 0
+msg_error:  db 0x0D, 0x0A, "hda read error", 0x0D, 0x0A, 0
+disk_err_msg db "hda error", 0
+KERNEL_OFFSET equ 0x1000
 
 
 ; Завершающий код загрузчика
