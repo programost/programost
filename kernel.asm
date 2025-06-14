@@ -15,11 +15,11 @@ jmp kernel_main
 %define TICKS_PER_SECOND 18     ; 18.2 тика в секунду
 
 ; Данные ядра
-welcome_msg db "YodaOS 16-bit v1.3", 13, 10, 0
+welcome_msg db "YodaOS 16-bit v1.4", 13, 10, 0
 prompt db "YodaOS> ", 0
 newline db 13, 10, 0
 unknown_cmd db "Unknown command", 13, 10, 0
-help_msg db "Commands: help, shutdown, reboot, neofetch, yred, file, ls, run, logcat, sb-version, cd, dir, mkdir, process-sys", 13, 10, 0
+help_msg db "Commands: help, shutdown, reboot, neofetch, yred, file, ls, run, logcat, sb-version, cd, dir, mkdir, process-sys, delete, addcomand", 13, 10, 0
 file_not_found db "File not found", 13, 10, 0
 file_prompt db "Enter filename: ", 0
 editing_msg db "Text Editor (ESC=save, BACKSPACE=delete):", 13, 10, 0
@@ -44,6 +44,20 @@ endfunc_msg db "ENDFUNC found, exiting function definition",13,10,0
 fs_full_msg db "File system full",13,10,0
 error_disk db "Error code 1: read file system imposible", 13, 10, 0
 process_msg db "1. System | 0% cpu | 20 KB ram |", 13, 10, 0
+file_deleted_msg db "File deleted!", 13, 10, 0
+cmd_prompt db "Enter command name: ", 0
+file_cmd_prompt db "Enter script filename: ", 0
+cmd_added_msg db "Command added!", 13, 10, 0
+cmd_exists_msg db "Command already exists", 13, 10, 0
+cmd_table_full db "Command table full", 13, 10, 0
+math_error_msg db "MATH error",13,10,0
+waitkey_msg db "Press key: ",0
+key_mismatch_msg db "Wrong key! Try again.",13,10,0
+align_error db "Invalid alignment (LEFT, CENTER, RIGHT)",13,10,0
+align_left db "LEFT",0
+align_center db "CENTER",0
+align_right db "RIGHT",0
+current_align db 0 ; 0=left, 1=center, 2=right
 neofetch_msg:
     db "  @@@@@@@  ", 0x0D, 0x0A   
     db " @@&&&&&@@ ", 0x0D, 0x0A 
@@ -71,9 +85,13 @@ logcat_msg:
     db "kernel - load file system", 13, 10
     db "kernel - good, system has starting", 13, 10
     db "kernel - log exit", 13, 10, 0
-info_myl_msg:
-    db "This MYL script language in YodaOS", 0x0D, 0x0A
-    db "create by Yoda", 0x0D, 0x0A, 0
+sb_msg db "sb version: 1.0", 13, 10 , 0
+time_msg db "TIME: Waiting ",0
+seconds_msg db " seconds",13,10,0
+random_msg db "Random number: ",0
+type_msg db "TYPE: ",0
+setcolor_msg db "SETCOLOR: Set color to ",0
+color_error db "Invalid color (0-15)",13,10,0
 learn_myl_msg:
     db "learn yscr language, lets start)", 0x0D, 0x0A
     db "PRINT <var or text> - print text or var on screen", 0x0D, 0x0A
@@ -101,11 +119,11 @@ learn_myl_msg:
     db ":label", 0x0D, 0x0A
     db "EXIT", 0x0D, 0x0A
     db "EXIT - end script file", 0x0D, 0x0A, 0
-sb_msg db "sb version: 1.0", 13, 10 , 0
-time_msg db "TIME: Waiting ",0
-seconds_msg db " seconds",13,10,0
-random_msg db "Random number: ",0
-type_msg db "TYPE: ",0
+snake_game_over db "GAME OVER! Score: ",0
+snake_press_key db "Press any key to restart",0
+snake_controls db "Controls: WASD to move, Q to quit",0
+blink_flag db 0    ; Флаг мигания для FPRINT
+
 
 
 ; Буферы
@@ -118,7 +136,30 @@ var_name_buffer: times 16 db 0
 func_name_buf: times FUNC_NAME_SIZE db 0
 import_buf: times FILE_NAME_SIZE db 0
 temp_str: times 16 db 0
-
+filename_buf: times 16 db 0
+cmdname_buf: times 16 db 0
+operator_buf: times 8 db 0
+value_buf: times 16 db 0
+;цвета
+color_names:
+    db "BLACK",0
+    db "BLUE",0
+    db "GREEN",0
+    db "CYAN",0
+    db "RED",0
+    db "MAGENTA",0
+    db "BROWN",0
+    db "LIGHT_GRAY",0
+    db "DARK_GRAY",0
+    db "LIGHT_BLUE",0
+    db "LIGHT_GREEN",0
+    db "LIGHT_CYAN",0
+    db "LIGHT_RED",0
+    db "LIGHT_MAGENTA",0
+    db "YELLOW",0
+    db "WHITE",0
+color_values db 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+text_color db 0x07
 ; Переменные (A-Z)
 variables:
 var_A dw 0
@@ -157,6 +198,12 @@ func_starts: times MAX_FUNCS dw 0
 func_ends: times MAX_FUNCS dw 0
 func_count db 0
 
+; Таблица пользовательских команд
+%define MAX_CUSTOM_CMD 5
+custom_cmd_names: times MAX_CUSTOM_CMD * 16 db 0
+custom_cmd_files: times MAX_CUSTOM_CMD * 16 db 0
+custom_cmd_count db 0
+
 ; Стек вызовов
 call_stack: times MAX_STACK_DEPTH * 4 db 0
 stack_ptr dw call_stack
@@ -171,7 +218,7 @@ cmd_file db "file",0
 cmd_clear db "clear",0
 cmd_echo db "echo",0
 cmd_goto_echo db "goto-echo",0
-cmd_process_sys db "process-sys"
+cmd_process_sys db "process-sys",0
 cmd_cd db "cd",0
 cmd_mkdir db "mkdir",0
 cmd_dir db "dir", 0
@@ -180,6 +227,8 @@ cmd_logcat db "logcat", 0
 cmd_simple_boot db "sb-version", 0
 cmd_run db "run",0 
 cmd_learn db "learn-yscr", 0
+cmd_delete db "delete",0
+cmd_addcomand db "addcomand",0
 
 ; Команды скриптов
 script_print db "PRINT",0
@@ -199,6 +248,11 @@ script_time db "TIME",0
 script_random db "RANDOM",0
 script_type db "TYPE",0
 script_printtime db "PRINTTIME",0
+script_math db "MATH",0
+script_waitkey db "WAITKEY",0 
+script_setcolor db "SETCOLOR", 0
+script_align db "ALING", 0
+script_fprint db "FPRINT", 0
 
 ; ======== ОСНОВНОЕ ЯДРО ========
 kernel_main:
@@ -216,6 +270,7 @@ kernel_main:
     ; Приветствие
     mov si, welcome_msg
     call print_string
+
 
     ; Основной цикл оболочки
 shell_loop:
@@ -325,6 +380,23 @@ process_command:
     call strcmp
     je .run
     
+    mov si, command_buffer
+    mov di, cmd_delete
+    call strcmp
+    je .delete
+    
+    mov si, command_buffer
+    mov di, cmd_addcomand
+    call strcmp
+    je .addcomand
+    
+    ; Проверка пользовательских команд
+    call check_custom_command
+    jnc .not_custom
+    
+    ret  ; Команда обработана
+    
+.not_custom:
     mov si, unknown_cmd
     call print_string
     ret
@@ -364,11 +436,18 @@ process_command:
     ret
 
 .echo:
-    mov si, [command_buffer]
+    mov si, command_buffer
+    add si, 5 ; Skip "echo "
+    call print_string
+    mov si, newline
     call print_string
     ret
+
 .gotoecho:
-    mov si, [command_buffer]
+    mov si, command_buffer
+    add si, 9 ; Skip "goto-echo "
+    call print_string
+    mov si, newline
     call print_string
     ret
 
@@ -438,10 +517,155 @@ process_command:
     je .run_error
     mov si, current_file
     call find_file
-    jc .file_not_found
+    jc .run_not_found
     call run_script
     ret
 .run_error:
+    ret
+.run_not_found:
+    mov si, file_not_found
+    call print_string
+    ret
+
+.delete:
+    mov si, file_prompt
+    call print_string
+    mov di, current_file
+    call read_line
+    cmp byte [current_file], 0
+    je .delete_done
+    
+    mov si, current_file
+    call find_file
+    jc .delete_not_found
+    
+    ; Удаление файла (обнуление первого байта имени)
+    mov byte [bx - FILE_NAME_SIZE], 0
+    mov si, file_deleted_msg
+    call print_string
+    ret
+
+.delete_not_found:
+    mov si, file_not_found
+    call print_string
+    ret
+
+.delete_done:
+    ret
+
+.addcomand:
+    ; Запрос имени файла
+    mov si, file_cmd_prompt
+    call print_string
+    mov di, filename_buf
+    call read_line
+    cmp byte [filename_buf], 0
+    je .addcomand_done
+    
+    ; Проверка существования файла
+    mov si, filename_buf
+    call find_file
+    jc .addcomand_not_found
+    
+    ; Запрос имени команды
+    mov si, cmd_prompt
+    call print_string
+    mov di, cmdname_buf
+    call read_line
+    cmp byte [cmdname_buf], 0
+    je .addcomand_done
+    
+    ; Проверка существования команды
+    call check_command_exists
+    jc .addcomand_exists
+    
+    ; Проверка свободного места
+    mov al, [custom_cmd_count]
+    cmp al, MAX_CUSTOM_CMD
+    jge .addcomand_full
+    
+    ; Сохранение команды
+    movzx ax, byte [custom_cmd_count]
+    mov di, 16
+    mul di
+    mov di, custom_cmd_names
+    add di, ax
+    mov si, cmdname_buf
+    call strcpy
+    
+    movzx ax, byte [custom_cmd_count]
+    mov di, 16
+    mul di
+    mov di, custom_cmd_files
+    add di, ax
+    mov si, filename_buf
+    call strcpy
+    
+    inc byte [custom_cmd_count]
+    mov si, cmd_added_msg
+    call print_string
+    ret
+
+.addcomand_not_found:
+    mov si, file_not_found
+    call print_string
+    ret
+
+.addcomand_exists:
+    mov si, cmd_exists_msg
+    call print_string
+    ret
+
+.addcomand_full:
+    mov si, cmd_table_full
+    call print_string
+    ret
+
+.addcomand_done:
+    ret
+
+; ======== ПРОВЕРКА ПОЛЬЗОВАТЕЛЬСКИХ КОМАНД ========
+check_custom_command:
+    pusha
+    mov cx, 0
+    mov al, [custom_cmd_count]
+    test al, al
+    jz .not_found
+
+    mov bx, custom_cmd_names
+.check_loop:
+    mov di, bx
+    mov si, command_buffer
+    call strcmp
+    je .found
+    
+    add bx, 16
+    inc cx
+    cmp cl, [custom_cmd_count]
+    jb .check_loop
+
+.not_found:
+    popa
+    clc
+    ret
+
+.found:
+    ; Запуск скрипта
+    mov ax, cx
+    mov di, 16
+    mul di
+    mov si, custom_cmd_files
+    add si, ax
+    mov di, current_file
+    call strcpy
+    
+    mov si, current_file
+    call find_file
+    jc .not_found
+    
+    call run_script
+    popa
+    stc
     ret
 
 ; ======== ИНТЕРПРЕТАТОР СКРИПТОВ ========
@@ -576,13 +800,23 @@ run_script:
     mov di, script_input
     call strcmp
     je .do_input
+
+    mov si, command_buffer
+    mov di, script_fprint
+    call strcmp
+    je .do_fprint
+    
+    mov si, command_buffer
+    mov di, script_align
+    call strcmp
+    je .do_align
     
     mov si, command_buffer
     mov di, script_exit
     call strcmp
     je .end_script
 
-     mov si, command_buffer
+    mov si, command_buffer
     mov di, script_time
     call strcmp
     je .do_time
@@ -602,16 +836,63 @@ run_script:
     call strcmp
     je .do_printtime
     
+    mov si, command_buffer
+    mov di, script_math
+    call strcmp
+    je .do_math
+
+    mov si, command_buffer
+    mov di, script_setcolor
+    call strcmp
+    je .do_setcolor
+
+    mov si, command_buffer
+    mov di, script_waitkey
+    call strcmp
+    je .do_waitkey
+    
     jmp .next_line
 
 .next_line:
     jmp .script_loop
 
 .do_print:
+    ; Проверяем, является ли аргумент переменной (одна буква)
+    mov si, args_buffer
+    lodsb
+    test al, al
+    jz .print_empty
+    mov bl, al
+    lodsb
+    cmp al, 0
+    jne .print_string   ; Если не один символ - это строка
+    
+    ; Проверяем диапазон A-Z
+    cmp bl, 'A'
+    jb .print_string
+    cmp bl, 'Z'
+    ja .print_string
+    
+    ; Вывод значения переменной
+    sub bl, 'A'
+    movzx bx, bl
+    shl bx, 1
+    mov ax, [variables + bx]
+    call itoa
+    mov si, temp_str
+    call print_string
+    mov si, newline
+    call print_string
+    jmp .next_line
+
+.print_string:
     mov si, args_buffer
     call print_string
     mov si, newline
     call print_string
+    jmp .next_line
+
+.print_empty:
     jmp .next_line
 
 .do_wait:
@@ -626,6 +907,112 @@ run_script:
     int 0x10
     jmp .next_line
 
+
+
+.do_setcolor:
+    ; Проверяем наличие аргумента
+    mov si, args_buffer
+    cmp byte [si], 0
+    je .color_error
+    
+    ; Пробуем преобразовать в число
+    call atoi
+    cmp ax, 0
+    jl .color_error
+    cmp ax, 15
+    jg .try_name
+    
+    ; Установка числового значения цвета
+    mov [text_color], al
+    jmp .apply_color
+
+.try_name:
+    ; Пробуем найти по имени
+    mov cx, 0
+    mov si, color_names
+.search_loop:
+    mov di, si
+    push si
+    mov si, args_buffer
+    call strcmp_ci
+    pop si
+    je .found_color
+    
+    ; Переходим к следующему имени
+    add si, 16
+    inc cx
+    cmp cx, 16
+    jb .search_loop
+    
+    jmp .color_error
+
+.found_color:
+    ; Получаем код цвета
+    mov bx, color_values
+    add bx, cx
+    mov al, [bx]
+    mov [text_color], al
+
+.apply_color:
+    ; Применяем цвет
+    mov si, setcolor_msg
+    call print_string
+    mov si, args_buffer
+    call print_string
+    mov si, newline
+    call print_string
+    jmp .next_line
+
+.color_error:
+    mov si, color_error
+    call print_string
+    jmp .next_line
+
+; Реализация FPRINT (мигающий текст)
+.do_fprint:
+    ; Устанавливаем флаг мигания
+    mov byte [blink_flag], 1
+    
+    ; Выводим текст с текущим выравниванием
+    mov si, args_buffer
+    call print_aligned_string
+    
+    ; Сбрасываем флаг мигания
+    mov byte [blink_flag], 0
+    jmp .next_line
+
+; Реализация ALIGN
+.do_align:
+    mov si, args_buffer
+    mov di, align_left
+    call strcmp_ci
+    je .set_left
+    
+    mov si, args_buffer
+    mov di, align_center
+    call strcmp_ci
+    je .set_center
+    
+    mov si, args_buffer
+    mov di, align_right
+    call strcmp_ci
+    je .set_right
+    
+    mov si, align_error
+    call print_string
+    jmp .next_line
+
+.set_left:
+    mov byte [current_align], 0
+    jmp .next_line
+
+.set_center:
+    mov byte [current_align], 1
+    jmp .next_line
+
+.set_right:
+    mov byte [current_align], 2
+    jmp .next_line
 .do_set:
     mov si, args_buffer
     mov di, var_name_buffer
@@ -772,6 +1159,41 @@ run_script:
     ; ENDFUNC во время выполнения = возврат
     jmp .do_return
 
+.do_waitkey:
+    ; Проверяем наличие аргумента
+    mov si, args_buffer
+    cmp byte [si], 0
+    je .next_line  ; Пропускаем если нет аргумента
+    
+    ; Сохраняем ожидаемый символ (только первый символ аргумента)
+    mov al, [si]
+    mov [.expected_key], al
+    
+    ; Выводим подсказку
+    mov si, waitkey_msg
+    call print_string
+    mov al, [.expected_key]
+    mov ah, 0x0E
+    int 0x10
+    mov si, newline
+    call print_string
+
+.waitkey_loop:
+    ; Ждем нажатия клавиши
+    mov ah, 0
+    int 0x16
+    
+    ; Сравниваем с ожидаемым символом
+    cmp al, [.expected_key]
+    je .key_match
+    
+    ; Неверная клавиша - выводим сообщение
+    mov si, key_mismatch_msg
+    call print_string
+    jmp .waitkey_loop
+
+.key_match:
+    jmp .next_line
 .do_import:
     mov si, args_buffer
     mov di, import_buf
@@ -885,6 +1307,121 @@ run_script:
     
     jmp .next_line
 
+.do_math:
+    ; Формат: MATH <var> <operator> <value>
+    ; Извлекаем имя переменной
+    mov si, args_buffer
+    mov di, var_name_buffer
+    call extract_word
+    mov al, [var_name_buffer]
+    cmp al, 'A'
+    jb .math_error
+    cmp al, 'Z'
+    ja .math_error
+    
+    ; Извлекаем оператор
+    mov si, args_buffer
+    call skip_word
+    call skip_spaces
+    mov di, operator_buf
+    call extract_word
+    
+    ; Извлекаем значение
+    mov si, args_buffer
+    call skip_word
+    call skip_spaces
+    call skip_word
+    call skip_spaces
+    mov di, value_buf
+    call extract_word
+    
+    ; Преобразуем значение в число или переменную
+    mov al, [value_buf]
+    cmp al, 'A'
+    jb .numeric_value
+    cmp al, 'Z'
+    ja .numeric_value
+    
+    ; Это переменная
+    sub al, 'A'
+    movzx bx, al
+    shl bx, 1
+    mov ax, [variables + bx]
+    jmp .do_operation
+
+.numeric_value:
+    mov si, value_buf
+    call atoi
+    jmp .do_operation
+
+.math_error:
+    mov si, math_error_msg
+    call print_string
+    jmp .next_line
+
+.do_operation:
+    ; Сохраняем значение
+    mov [.value], ax
+    
+    ; Получаем текущее значение переменной
+    mov al, [var_name_buffer]
+    sub al, 'A'
+    movzx bx, al
+    shl bx, 1
+    mov cx, [variables + bx]
+    
+    ; Определяем оператор
+    mov si, operator_buf
+    mov di, .add_str
+    call strcmp
+    je .do_add
+    
+    mov di, .sub_str
+    call strcmp
+    je .do_sub
+    
+    mov di, .mul_str
+    call strcmp
+    je .do_mul
+    
+    mov di, .div_str
+    call strcmp
+    je .do_div
+    
+    jmp .math_error
+
+.do_add:
+    add cx, [.value]
+    jmp .store_result
+
+.do_sub:
+    sub cx, [.value]
+    jmp .store_result
+
+.do_mul:
+    mov ax, cx
+    mul word [.value]
+    mov cx, ax
+    jmp .store_result
+
+.do_div:
+    cmp word [.value], 0
+    je .math_error
+    mov ax, cx
+    xor dx, dx
+    div word [.value]
+    mov cx, ax
+
+.store_result:
+    mov [variables + bx], cx
+    jmp .next_line
+
+.add_str db "ADD",0
+.sub_str db "SUB",0
+.mul_str db "MUL",0
+.div_str db "DIV",0
+.value dw 0
+
 .end_script:
     mov si, script_end_msg
     call print_string
@@ -923,9 +1460,222 @@ run_script:
 .script_ptr dw 0
 .skip_depth db 0
 .in_function db 0
+.expected_key db 0 
 args_buffer times COMMAND_BUF_SIZE db 0
 
 ; ======== СИСТЕМНЫЕ ФУНКЦИИ ========
+; Вывод строки с выравниванием
+; Вход: SI - строка
+print_aligned_string:
+    pusha
+    ; Сохраняем текущую позицию курсора
+    call get_cursor_position
+    mov [.saved_row], dh
+    mov [.saved_col], dl
+    
+    ; Получаем длину строки
+    call strlen
+    mov [.length], cx
+    
+    ; Вычисляем новую позицию в зависимости от выравнивания
+    mov al, [current_align]
+    cmp al, 0
+    je .left
+    cmp al, 1
+    je .center
+    cmp al, 2
+    je .right
+    
+.left:
+    mov dl, 0
+    jmp .set_cursor
+
+.center:
+    mov ax, 80
+    sub ax, [.length]
+    shr ax, 1 ; Делим на 2
+    mov dl, al
+    jmp .set_cursor
+
+.right:
+    mov ax, 80
+    sub ax, [.length]
+    mov dl, al
+    jmp .set_cursor
+
+.set_cursor:
+    mov dh, [.saved_row]
+    call set_cursor_position
+    
+    ; Выводим строку посимвольно с атрибутами
+    mov si, [esp+14] ; Восстанавливаем исходный SI из стека
+    call print_string_with_attr
+    
+    ; Восстанавливаем позицию курсора и переходим на новую строку
+    mov dh, [.saved_row]
+    inc dh
+    mov dl, 0
+    call set_cursor_position
+    
+    popa
+    ret
+.length dw 0
+.saved_row db 0
+.saved_col db 0
+
+; Вывод строки с атрибутами (поддержка мигания)
+; Вход: SI - строка
+print_string_with_attr:
+    pusha
+    mov cx, 0 ; Счетчик символов
+    mov bx, 0 ; Позиция в видеопамяти
+    
+.loop:
+    lodsb ; Загружаем следующий символ в AL
+    test al, al
+    jz .done
+    
+    ; Сохраняем символ
+    mov [.char], al
+    
+    ; Получаем текущую позицию курсора
+    call get_cursor_position
+    mov [.row], dh
+    mov [.col], dl
+    
+    ; Вычисляем позицию в видеопамяти
+    mov ax, 80
+    mul dh
+    xor dh, dh
+    add ax, dx
+    shl ax, 1 ; Умножаем на 2 (символ + атрибут)
+    mov di, ax
+    add di, 0xB800 ; Сегмент видеопамяти
+    
+    ; Устанавливаем атрибут
+    mov al, [text_color]
+    cmp byte [blink_flag], 1
+    jne .no_blink
+    or al, 10000000b ; Устанавливаем бит мигания
+    
+.no_blink:
+    mov es:[di+1], al ; Устанавливаем атрибут
+    
+    ; Выводим символ
+    mov al, [.char]
+    mov es:[di], al ; Выводим символ
+    
+    ; Перемещаем курсор
+    inc dl
+    cmp dl, 80
+    jb .no_wrap
+    mov dl, 0
+    inc dh
+    
+.no_wrap:
+    mov [.col], dl
+    mov [.row], dh
+    call set_cursor_position
+    
+    jmp .loop
+
+.done:
+    popa
+    ret
+.char db 0
+.row db 0
+.col db 0
+
+; Получение позиции курсора
+; Выход: DH = row, DL = col
+get_cursor_position:
+    push ax
+    push bx
+    push cx
+    mov ah, 0x03
+    xor bh, bh
+    int 0x10
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Установка позиции курсора
+; Вход: DH = row, DL = col
+set_cursor_position:
+    push ax
+    push bx
+    mov ah, 0x02
+    xor bh, bh
+    int 0x10
+    pop bx
+    pop ax
+    ret
+
+; Вычисление длины строки
+; Вход: SI - строка
+; Выход: CX - длина
+strlen:
+    push si
+    xor cx, cx
+.loop:
+    lodsb
+    test al, al
+    jz .done
+    inc cx
+    jmp .loop
+.done:
+    pop si
+    ret
+
+; Сравнение строк без учета регистра
+; Вход: SI - строка1, DI - строка2
+; Выход: CF=1 если равны
+strcmp_ci:
+    pusha
+.loop:
+    mov al, [si]
+    mov bl, [di]
+    
+    ; Преобразование в верхний регистр
+    cmp al, 'a'
+    jb .check_end1
+    cmp al, 'z'
+    ja .check_end1
+    sub al, 32
+.check_end1:
+    cmp bl, 'a'
+    jb .check_end2
+    cmp bl, 'z'
+    ja .check_end2
+    sub bl, 32
+.check_end2:
+    
+    cmp al, bl
+    jne .not_equal
+    test al, al
+    jz .equal
+    inc si
+    inc di
+    jmp .loop
+
+.not_equal:
+    popa
+    clc
+    ret
+
+.equal:
+    popa
+    stc
+    ret
+
+; Получение позиции курсора
+; Выход: DH = row, DL = col
+
+
+
+
+
 ; Генерация случайного числа от 10 до 99
 generate_random:
     push cx
@@ -1602,6 +2352,36 @@ skip_spaces:
     cmp al, ' '
     je skip_spaces
     dec si
+    ret
+
+; Проверка существования команды
+check_command_exists:
+    pusha
+    mov cx, 0
+    mov al, [custom_cmd_count]
+    test al, al
+    jz .not_found
+
+    mov bx, custom_cmd_names
+.check_loop:
+    mov di, bx
+    mov si, cmdname_buf
+    call strcmp
+    je .found
+    
+    add bx, 16
+    inc cx
+    cmp cl, [custom_cmd_count]
+    jb .check_loop
+
+.not_found:
+    popa
+    clc
+    ret
+
+.found:
+    popa
+    stc
     ret
 
 times 0x5000 - ($-$$) db 0
