@@ -13,6 +13,7 @@ jmp kernel_main
 %define MAX_STACK_DEPTH 20
 %define COMMAND_BUF_SIZE 64
 %define TICKS_PER_SECOND 18     ; 18.2 тика в секунду
+%define FILE_SYSTEM_ADDR 0x5000 ; Адрес файловой системы в памяти
 
 ; Данные ядра
 welcome_msg db "YodaOS 16-bit v1.4", 13, 10, 0
@@ -253,7 +254,7 @@ script_waitkey db "WAITKEY",0
 script_setcolor db "SETCOLOR", 0
 script_align db "ALING", 0
 script_fprint db "FPRINT", 0
-
+script_syscall db "SYSCALL",0
 ; ======== ОСНОВНОЕ ЯДРО ========
 kernel_main:
     ; Инициализация сегментов
@@ -262,7 +263,10 @@ kernel_main:
     mov es, ax
     mov ss, ax
     mov sp, 0xFFFF
+    
 
+    ; Загружаем ФС
+    call load_file_system
     ; Очистка экрана
     mov ax, 0x0003
     int 0x10
@@ -284,6 +288,24 @@ shell_loop:
     ; Обработка команд
     call process_command
     jmp shell_loop
+; ======== ФУНКЦИИ ФАЙЛОВОЙ СИСТЕМЫ ========
+load_file_system:
+    pusha
+    mov si, FILE_SYSTEM_ADDR
+    mov di, files
+    mov cx, MAX_FILES * FILE_SIZE / 2
+    rep movsw
+    popa
+    ret
+
+save_file_system:
+    pusha
+    mov si, files
+    mov di, FILE_SYSTEM_ADDR
+    mov cx, MAX_FILES * FILE_SIZE / 2
+    rep movsw
+    popa
+    ret
 
 ; ======== ОБРАБОТКА КОМАНД ========
 process_command:
@@ -462,6 +484,7 @@ process_command:
     ret
 
 .shutdown:
+    call save_file_system
     mov ax, 0x5307
     mov bx, 0x0001
     mov cx, 0x0003
@@ -469,6 +492,7 @@ process_command:
     ret
 
 .reboot:
+    call save_file_system
     mov al, 0xFE
     out 0x64, al
     ret
@@ -543,6 +567,7 @@ process_command:
     mov byte [bx - FILE_NAME_SIZE], 0
     mov si, file_deleted_msg
     call print_string
+    call save_file_system
     ret
 
 .delete_not_found:
@@ -604,6 +629,7 @@ process_command:
     inc byte [custom_cmd_count]
     mov si, cmd_added_msg
     call print_string
+    call save_file_system
     ret
 
 .addcomand_not_found:
@@ -850,6 +876,11 @@ run_script:
     mov di, script_waitkey
     call strcmp
     je .do_waitkey
+
+    mov si, command_buffer
+    mov di, script_syscall
+    call strcmp
+    je .do_syscall
     
     jmp .next_line
 
@@ -910,54 +941,51 @@ run_script:
 
 
 .do_setcolor:
-    ; Проверяем наличие аргумента
+    ; Проверяем наличие аргументов
     mov si, args_buffer
     cmp byte [si], 0
     je .color_error
     
-    ; Пробуем преобразовать в число
+    ; Извлекаем цвет текста
     call atoi
     cmp ax, 0
     jl .color_error
     cmp ax, 15
-    jg .try_name
+    jg .color_error
+    mov bl, al  ; Сохраняем цвет текста в BL
     
-    ; Установка числового значения цвета
-    mov [text_color], al
-    jmp .apply_color
-
-.try_name:
-    ; Пробуем найти по имени
-    mov cx, 0
-    mov si, color_names
-.search_loop:
-    mov di, si
-    push si
-    mov si, args_buffer
-    call strcmp_ci
-    pop si
-    je .found_color
+    ; Пропускаем пробелы
+    call skip_spaces
     
-    ; Переходим к следующему имени
-    add si, 16
-    inc cx
-    cmp cx, 16
-    jb .search_loop
+    ; Извлекаем цвет фона
+    call atoi
+    cmp ax, 0
+    jl .color_error
+    cmp ax, 15
+    jg .color_error
+    shl al, 4  ; Сдвигаем цвет фона на 4 бита влево
+    or bl, al  ; Объединяем с цветом текста
     
-    jmp .color_error
-
-.found_color:
-    ; Получаем код цвета
-    mov bx, color_values
-    add bx, cx
-    mov al, [bx]
-    mov [text_color], al
-
-.apply_color:
-    ; Применяем цвет
+    ; Устанавливаем новый цвет
+    mov [text_color], bl
+    
+    ; Применяем новый цвет ко всему экрану
+    call update_screen_color
+    
+    ; Выводим сообщение
     mov si, setcolor_msg
     call print_string
-    mov si, args_buffer
+    mov ax, bx
+    and al, 0x0F  ; Извлекаем цвет текста
+    call itoa
+    mov si, temp_str
+    call print_string
+    mov si, .bg_msg
+    call print_string
+    mov ax, bx
+    shr al, 4     ; Извлекаем цвет фона
+    call itoa
+    mov si, temp_str
     call print_string
     mov si, newline
     call print_string
@@ -968,6 +996,9 @@ run_script:
     call print_string
     jmp .next_line
 
+.bg_msg db " on ",0
+
+    
 ; Реализация FPRINT (мигающий текст)
 .do_fprint:
     ; Устанавливаем флаг мигания
@@ -1194,6 +1225,23 @@ run_script:
 
 .key_match:
     jmp .next_line
+
+.do_syscall:
+    ; Копируем аргументы в command_buffer
+    mov si, args_buffer
+    mov di, command_buffer
+    call strcpy
+    
+    ; Сохраняем состояние интерпретатора
+    pusha
+    
+    ; Вызываем обработчик команд
+    call process_command
+    
+    ; Восстанавливаем состояние
+    popa
+    jmp .next_line
+
 .do_import:
     mov si, args_buffer
     mov di, import_buf
@@ -1466,6 +1514,31 @@ args_buffer times COMMAND_BUF_SIZE db 0
 ; ======== СИСТЕМНЫЕ ФУНКЦИИ ========
 ; Вывод строки с выравниванием
 ; Вход: SI - строка
+count_words:
+    push si
+    xor cx, cx
+    mov byte [.in_word], 0
+.loop:
+    lodsb
+    test al, al
+    jz .done
+    cmp al, ' '
+    je .space
+    cmp byte [.in_word], 0
+    jne .continue
+    inc cx
+    mov byte [.in_word], 1
+    jmp .continue
+.space:
+    mov byte [.in_word], 0
+.continue:
+    jmp .loop
+.done:
+    pop si
+    ret
+.in_word db 0
+
+    
 print_aligned_string:
     pusha
     ; Сохраняем текущую позицию курсора
@@ -1585,7 +1658,20 @@ print_string_with_attr:
 .char db 0
 .row db 0
 .col db 0
-
+; Обновление цвета всего экрана
+update_screen_color:
+    pusha
+    mov ax, 0xB800
+    mov es, ax
+    xor di, di
+    mov cx, 80*25  ; Размер экрана
+    mov ah, [text_color]
+.update_loop:
+    mov al, es:[di]    ; Сохраняем символ
+    stosw              ; Записываем символ + атрибут
+    loop .update_loop
+    popa
+    ret
 ; Получение позиции курсора
 ; Выход: DH = row, DL = col
 get_cursor_position:
@@ -1973,7 +2059,57 @@ parse_functions:
 
 .file_ptr dw 0
 .skip_depth db 0
+; ======== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ SETCOLOR ========
+; Преобразует строку в значение цвета (0-15)
+; Вход: SI - строка с именем цвета или числом
+; Выход: AL - значение цвета, CF=1 при ошибке
+get_color_value:
+    push si
+    push di
+    
+    ; Пробуем преобразовать в число
+    call atoi
+    cmp ax, 0
+    jl .not_number
+    cmp ax, 15
+    jg .not_number
+    jmp .success
 
+.not_number:
+    ; Поиск по таблице имен цветов
+    mov di, color_names
+    mov cx, 0
+.search_loop:
+    push si
+    push di
+    call strcmp_ci
+    pop di
+    pop si
+    je .found
+    add di, 16
+    inc cx
+    cmp cx, 16
+    jb .search_loop
+    stc  ; Устанавливаем флаг ошибки
+    jmp .done
+
+.found:
+    mov ax, cx  ; Индекс в таблице = значение цвета
+.success:
+    clc  ; Сбрасываем флаг ошибки
+.done:
+    pop di
+    pop si
+    ret
+
+; Печать символа AL
+print_char:
+    pusha
+    mov ah, 0x0E
+    xor bh, bh
+    int 0x10
+    popa
+    ret
 ; ======== ФУНКЦИИ ФАЙЛОВОЙ СИСТЕМЫ ========
 list_files:
     mov si, list_header
@@ -2046,6 +2182,7 @@ save_to_filesystem:
 
 ; ======== ТЕКСТОВЫЙ РЕДАКТОР ========
 text_editor:
+    call load_file_system
     mov di, file_buffer
     mov cx, FILE_CONTENT_SIZE
     xor al, al
@@ -2056,6 +2193,7 @@ text_editor:
     
     mov di, file_buffer
     mov cx, 0
+    
     
 .edit_loop:
     mov ah, 0
@@ -2120,6 +2258,7 @@ text_editor:
     jc .save_error
     mov si, file_saved_msg
     call print_string
+    call save_file_system
     ret
 .skip_save:
     ret
